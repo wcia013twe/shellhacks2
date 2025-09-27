@@ -1,13 +1,11 @@
-from flask import Flask, render_template_string
 import os
 import google.generativeai as genai
 from dotenv import load_dotenv
+from main import WebViewer  # Import the web viewer class or function from main.py
 
 load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
 print("API Key Loaded:", api_key is not None)
-
-app = Flask(__name__)
 
 SYSTEM_PROMPT = """
 You are an AI UX optimization assistant specializing in ADHD-friendly webpage design.
@@ -94,11 +92,11 @@ html_component = """
 </aside>
 """
 
-@app.route("/")
-def index():
+# Generate the HTML file dynamically
+def generate_html_file():
     original_html, modified_html, explanation = optimize_webpage(expected_dataset, real_dataset, score, html_component)
 
-    page = f"""
+    html_content = f"""
     <html>
     <head>
         <title>Gemini UX Test</title>
@@ -129,8 +127,22 @@ def index():
     </body>
     </html>
     """
-    return page
+
+    # Write the HTML content to a file
+    output_file = "output.html"
+    with open(output_file, "w") as file:
+        file.write(html_content)
+
+    return output_file
+
+
+# Initialize the new web viewer
+def launch_web_viewer():
+    viewer = WebViewer()  # Assuming WebViewer is the class or function for the web viewer
+    html_file = generate_html_file()  # Generate the HTML file
+    viewer.load_file(html_file)  # Load the generated HTML file into the viewer
+    viewer.show()
 
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    launch_web_viewer()  # Launch the web viewer
