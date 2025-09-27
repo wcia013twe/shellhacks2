@@ -12,6 +12,9 @@ try:
 except ImportError:
     webview = None
 
+from ..report import ReportManager
+from ..overlay import OverlayInjector
+
 
 class BrowserTimer:
     """Manages timing and automatic closure for browser sessions."""
@@ -21,6 +24,8 @@ class BrowserTimer:
         self.timer_thread = None
         self.timer_active = False
         self.webview_window = None
+        self.report_manager = ReportManager()
+        self.overlay_injector = OverlayInjector()
     
     def start_timer(self, time_limit_minutes, webview_window=None):
         """Start a timer to close the browser after the specified time limit."""
@@ -67,99 +72,27 @@ class BrowserTimer:
                 time.sleep(1)
             
             if self.timer_active:
-                print("Time limit reached! Closing browser...")
-                self.close_browser()
+                print("⏰ Time limit reached!")
+                
+                # Set webview window for overlay injection
+                self.overlay_injector.set_webview_window(self.webview_window)
+                
+                # Inject component overlays into the browser
+                self.overlay_injector.inject_component_overlays()
+                
+                # Show the analysis report
+                self.report_manager.show_component_analysis_report()
+                
+                print("   Browser will remain open - close it manually when finished")
                 self.timer_active = False
         
         self.timer_thread = threading.Thread(target=timer_function, daemon=True)
         self.timer_thread.start()
     
     def close_browser(self):
-        """Close the browser window using multiple methods."""
-        try:
-            print("Attempting to close browser window...")
-            
-            # Method 1: The correct pywebview approach - destroy individual windows
-            windows_closed = False
-            
-            # First, let's see what webview attributes are available
-            print(f"Webview available attributes: {[attr for attr in dir(webview) if not attr.startswith('_')]}")
-            
-            if hasattr(webview, 'windows') and webview.windows:
-                print(f"Found {len(webview.windows)} windows in webview.windows")
-                for window in webview.windows:
-                    try:
-                        print(f"Attempting to destroy window: {window}")
-                        window.destroy()
-                        print(f"Window destroyed successfully")
-                        windows_closed = True
-                    except Exception as e:
-                        print(f"Error destroying window: {e}")
-            
-            # Method 2: Try the _windows attribute if windows doesn't exist
-            elif hasattr(webview, '_windows') and webview._windows:
-                print(f"Found {len(webview._windows)} windows in webview._windows")
-                windows_to_close = list(webview._windows)  # Create a copy
-                for window in windows_to_close:
-                    try:
-                        print(f"Attempting to destroy window: {window}")
-                        window.destroy()
-                        print(f"Window destroyed successfully")
-                        windows_closed = True
-                    except Exception as e:
-                        print(f"Error destroying window: {e}")
-            
-            # Method 3: Use stored window reference if available
-            if self.webview_window and not windows_closed:
-                try:
-                    print("Trying stored window reference")
-                    self.webview_window.destroy()
-                    print("Stored window destroyed successfully")
-                    windows_closed = True
-                except Exception as e:
-                    print(f"Error with stored window reference: {e}")
-            
-            # Method 4: JavaScript approach to close from within
-            if not windows_closed:
-                try:
-                    print("Attempting JavaScript window.close()")
-                    # Try to evaluate JavaScript to close the window
-                    if hasattr(webview, 'evaluate_js') and webview.windows:
-                        for window in webview.windows:
-                            try:
-                                window.evaluate_js('window.close();')
-                                print("JavaScript window.close() executed")
-                                windows_closed = True
-                                break
-                            except:
-                                pass
-                except Exception as e:
-                    print(f"Error with JavaScript close: {e}")
-            
-            # Method 5: Try to quit the webview application
-            if not windows_closed:
-                try:
-                    print("Attempting webview application quit")
-                    if hasattr(webview, 'config') and hasattr(webview.config, 'gui'):
-                        if hasattr(webview.config.gui, 'destroy'):
-                            webview.config.gui.destroy()
-                            windows_closed = True
-                            print("GUI destroyed via config")
-                except Exception as e:
-                    print(f"Error with GUI destroy: {e}")
-            
-            # Method 6: Final fallback message
-            if not windows_closed:
-                print("⚠️  NOTICE: Automatic browser close failed")
-                print("   The browser window is still open - please close it manually")
-                print("   This is a limitation of the current pywebview version")
-            else:
-                print("✅ Browser window closed successfully")
-            
-            print("Browser close sequence completed")
-                
-        except Exception as e:
-            print(f"Error in close_browser method: {e}")
+        """Browser closing is now handled manually by the user."""
+        print("Note: Timer no longer closes browser automatically")
+        print("      Please close the browser manually when finished")
     
     def stop_timer(self):
         """Stop the active timer."""
