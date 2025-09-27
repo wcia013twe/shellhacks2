@@ -7,6 +7,8 @@ a tkinter-based graphical user interface for launching web browsers.
 
 import tkinter as tk
 from tkinter import ttk, messagebox
+import threading
+import time
 try:
     import webview
 except ImportError:
@@ -20,6 +22,9 @@ class SimpleBrowserLauncher:
         """Initialize the browser launcher GUI."""
         self.root = tk.Tk()
         self.root.title("Simple Browser Launcher")
+        self.timer_thread = None
+        self.timer_active = False
+        self.webview_window = None
         self.setup_ui()
 
     def setup_ui(self):
@@ -34,6 +39,15 @@ class SimpleBrowserLauncher:
         self.url_entry = ttk.Entry(url_frame, width=40)
         self.url_entry.pack(side='left', fill='x', expand=True, padx=(5, 0))
         self.url_entry.insert(0, "https://google.com")
+
+        # Time limit input section
+        time_frame = ttk.Frame(main_frame)
+        time_frame.pack(fill='x', pady=(0, 10))
+        ttk.Label(time_frame, text="Time Limit (minutes):").pack(side='left')
+        self.time_entry = ttk.Entry(time_frame, width=10)
+        self.time_entry.pack(side='left', padx=(5, 10))
+        self.time_entry.insert(0, "2")  # Default 2 minutes
+        ttk.Label(time_frame, text="(0 = no limit)", foreground='gray').pack(side='left')
 
         # Quick links section
         quick_links_frame = ttk.Frame(main_frame)
@@ -74,9 +88,20 @@ class SimpleBrowserLauncher:
     def launch_browser(self):
         """Launch the browser with the entered URL."""
         url = self.url_entry.get().strip()
+        time_limit_str = self.time_entry.get().strip()
         
         if not url:
             messagebox.showerror("Error", "Please enter a URL")
+            return
+            
+        # Validate time limit
+        try:
+            time_limit = float(time_limit_str) if time_limit_str else 0
+            if time_limit < 0:
+                messagebox.showerror("Error", "Time limit cannot be negative")
+                return
+        except ValueError:
+            messagebox.showerror("Error", "Please enter a valid number for time limit")
             return
             
         if not url.startswith(('http://', 'https://')):
@@ -89,13 +114,25 @@ class SimpleBrowserLauncher:
             )
             return
 
-        self.status_var.set(f"Launching: {url}")
+        # Update status with time limit info
+        if time_limit > 0:
+            self.status_var.set(f"Launching: {url} (Time limit: {time_limit} min)")
+        else:
+            self.status_var.set(f"Launching: {url} (No time limit)")
+            
         self.launch_btn.config(state='disabled')
         
         try:
             self.root.withdraw()
+            
+            # Start timer if time limit is set
+            if time_limit > 0:
+                self.start_timer(time_limit)
+            else:
+                print("Time limit set to 0 - Browser session is unlimited")
+            
             # Open browser window maximized (not fullscreen)
-            webview.create_window(
+            self.webview_window = webview.create_window(
                 'Browser', 
                 url, 
                 width=1024, 
@@ -105,12 +142,122 @@ class SimpleBrowserLauncher:
             )
             webview.start()
             self.root.deiconify()
+            
+            # Stop timer when browser closes
+            self.timer_active = False
+            print("Browser session ended.")
+                
         except Exception as e:
             messagebox.showerror("Error", f"Failed to launch browser:\n{e}")
             self.status_var.set("Error launching browser")
         finally:
             self.launch_btn.config(state='normal')
             self.status_var.set("Ready - Enter a URL and click Open Browser")
+
+    def start_timer(self, time_limit_minutes):
+        """Start a timer to close the browser after the specified time limit."""
+        self.timer_active = True
+        
+        def timer_function():
+            time_limit_seconds = int(time_limit_minutes * 60)
+            
+            print(f"Browser timer started: {time_limit_minutes} minutes ({time_limit_seconds} seconds)")
+            
+            # Wait a few seconds for the browser window to fully initialize
+            initialization_delay = 3
+            for i in range(initialization_delay):
+                if not self.timer_active:
+                    print("Timer stopped during initialization.")
+                    return
+                time.sleep(1)
+            
+            for remaining in range(time_limit_seconds - initialization_delay, 0, -1):
+                # Check if timer should stop
+                if not self.timer_active:
+                    print("Timer stopped.")
+                    return
+                
+                # Only check for window closure after initialization period
+                # and only if we're more than 5 seconds into the countdown
+                if remaining < time_limit_seconds - initialization_delay - 5:
+                    try:
+                        # Check if webview windows are still active
+                        if hasattr(webview, '_windows') and len(webview._windows) == 0:
+                            print("Browser window closed by user. Timer stopped.")
+                            self.timer_active = False
+                            return
+                    except:
+                        # If we can't reliably check, continue counting
+                        pass
+                
+                minutes = remaining // 60
+                seconds = remaining % 60
+                print(f"Time remaining: {minutes:02d}:{seconds:02d}")
+                time.sleep(1)
+            
+            if self.timer_active:
+                print("Time limit reached! Closing browser...")
+                self.close_browser()
+                self.timer_active = False
+        
+        self.timer_thread = threading.Thread(target=timer_function, daemon=True)
+        self.timer_thread.start()
+
+    def close_browser(self):
+        """Close the browser window using multiple methods."""
+        try:
+            print("Attempting to close browser window...")
+            
+            # Method 1: Use stored window reference
+            if self.webview_window:
+                try:
+                    print("Closing using stored window reference")
+                    self.webview_window.destroy()
+                    print("Window destroyed successfully")
+                except Exception as e:
+                    print(f"Error with stored window reference: {e}")
+            
+            # Method 2: Destroy all windows
+            if hasattr(webview, '_windows') and webview._windows:
+                print(f"Found {len(webview._windows)} windows to close")
+                windows_to_close = list(webview._windows)  # Create a copy
+                for window in windows_to_close:
+                    try:
+                        print(f"Closing window: {window}")
+                        window.destroy()
+                        print(f"Window {window} closed successfully")
+                    except Exception as e:
+                        print(f"Error closing individual window: {e}")
+            
+            # Method 3: Call webview.destroy()
+            try:
+                print("Calling webview.destroy()")
+                webview.destroy()
+                print("webview.destroy() completed")
+            except Exception as e:
+                print(f"Error with webview.destroy(): {e}")
+            
+            # Method 4: Try alternative termination methods
+            try:
+                if hasattr(webview, '_terminate'):
+                    print("Calling webview._terminate()")
+                    webview._terminate()
+                elif hasattr(webview, 'stop'):
+                    print("Calling webview.stop()")
+                    webview.stop()
+            except Exception as e:
+                print(f"Error with alternative termination: {e}")
+                
+            print("Browser close sequence completed")
+                
+        except Exception as e:
+            print(f"Error in close_browser method: {e}")
+
+    def stop_timer(self):
+        """Stop the active timer."""
+        if self.timer_active:
+            self.timer_active = False
+            print("Timer manually stopped.")
 
     def load_quick_link(self, url):
         """Load a quick link URL into the entry field and launch browser."""
