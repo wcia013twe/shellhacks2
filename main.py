@@ -6,7 +6,7 @@ It imports and runs the GUI from the modular src package.
 
 Features:
 - Browser launching with time limits
-- Eye tracking integration (experimental)
+- Timer-based browsing sessions
 - Modular architecture for easy extension
 """
 
@@ -16,7 +16,7 @@ from src.gui import SimpleBrowserLauncher
 def main():
     """Main function to run the browser launcher application."""
     print("Starting Simple Browser Launcher...")
-    print("Features: Time-limited browsing, Eye tracking (experimental)")
+    print("Features: Time-limited browsing, Timer-based sessions")
     
     app = SimpleBrowserLauncher()
     app.run()

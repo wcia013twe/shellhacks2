@@ -10,11 +10,11 @@ from tkinter import ttk, messagebox
 
 from ..timer import BrowserTimer
 from ..browser import BrowserManager
-from ..eye_tracking import EyeTracker
+# from ..eye_tracking import EyeTracker
 
 
 class SimpleBrowserLauncher:
-    """A GUI application for launching a simple web browser with timer and eye tracking."""
+    """A GUI application for launching a simple web browser with timer."""
     
     def __init__(self):
         """Initialize the browser launcher GUI."""
@@ -24,7 +24,6 @@ class SimpleBrowserLauncher:
         # Initialize component managers
         self.timer_manager = BrowserTimer()
         self.browser_manager = BrowserManager()
-        self.eye_tracker = EyeTracker()
         
         self.setup_ui()
 
@@ -50,16 +49,7 @@ class SimpleBrowserLauncher:
         self.time_entry.insert(0, "2")  # Default 2 minutes
         ttk.Label(time_frame, text="(0 = no limit)", foreground='gray').pack(side='left')
 
-        # Eye tracking option section
-        tracking_frame = ttk.Frame(main_frame)
-        tracking_frame.pack(fill='x', pady=(0, 10))
-        self.eye_tracking_var = tk.BooleanVar(value=True)
-        eye_tracking_check = ttk.Checkbutton(
-            tracking_frame,
-            text="Enable Eye Tracking (experimental)",
-            variable=self.eye_tracking_var
-        )
-        eye_tracking_check.pack(side='left')
+
 
         # Quick links section
         quick_links_frame = ttk.Frame(main_frame)
@@ -123,17 +113,10 @@ class SimpleBrowserLauncher:
         else:
             config_info.append("No time limit")
             
-        if self.eye_tracking_var.get():
-            config_info.append("Eye tracking enabled")
-            
         self.status_var.set(f"Launching: {url} ({', '.join(config_info)})")
         self.launch_btn.config(state='disabled')
         
         try:
-            # Start eye tracking if enabled
-            if self.eye_tracking_var.get():
-                self.eye_tracker.start_tracking()
-            
             # Start timer if time limit is set (start it in a separate thread to not block)
             if time_limit > 0:
                 # Start timer - it will wait for browser initialization
@@ -145,12 +128,6 @@ class SimpleBrowserLauncher:
             success, result = self.browser_manager.launch_browser(url, self.root)
             
             # The browser launch is complete at this point (either closed by user or timer)
-            
-            # Stop eye tracking when browser closes
-            if self.eye_tracking_var.get():
-                tracking_summary = self.eye_tracker.stop_tracking()
-                if tracking_summary:
-                    print(f"Eye tracking summary: {tracking_summary}")
             
             # Stop timer when browser closes
             self.timer_manager.stop_timer()

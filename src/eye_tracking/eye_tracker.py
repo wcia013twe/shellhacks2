@@ -143,17 +143,7 @@ while running:
             running = False
         elif event.type == pygame.KEYDOWN:
             if event.key == pygame.K_q:  # Quit with 'Q'
-                print("🔄 Shutting down...")
-                # Clean up camera
-                try:
-                    cap.release()
-                    print("📷 Camera released")
-                except:
-                    pass
-                # Force quit everything
-                pygame.quit()
-                import sys
-                sys.exit(0)
+                running = False
             elif event.key == pygame.K_SPACE and current_mode == SETUP_MODE:  # Skip setup
                 switch_to_calibration_mode()
                 print("⏭️ Setup skipped, starting calibration...")
@@ -175,11 +165,20 @@ while running:
                         pass
                 print("🔄 Restarting from camera setup...")
 
+    # Get camera frame
+    ret, frame = cap.read()
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    frame = np.flip(frame, axis=1)
+    
+    # Determine if we're still calibrating
+    calibrate = (iterator < n_points and current_mode == CALIBRATION_MODE)
+    gaze_event, calibration = gestures.step(frame, calibrate, screen_width, screen_height, context="my_context")
+
     # ========== SETUP MODE (Simple Face Detection) ==========
     if current_mode == SETUP_MODE:
         screen.fill(BLACK)
         
-        # Show setup message FIRST, before camera processing
+        # Simple message
         font = pygame.font.SysFont('Arial', 30)
         text1 = font.render("Setting up camera...", True, WHITE)
         text2 = font.render("Look at the camera", True, WHITE)
@@ -189,30 +188,11 @@ while running:
         screen.blit(text2, (50, screen_height // 2))
         screen.blit(text3, (50, screen_height // 2 + 100))
         
-        # Update display immediately so user sees the message
-        pygame.display.flip()
-        
-        # Now try camera processing
-        try:
-            ret, frame = cap.read()
-            if ret:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                frame = np.flip(frame, axis=1)
-                
-                # Determine if we're still calibrating
-                calibrate = (iterator < n_points and current_mode == CALIBRATION_MODE)
-                gaze_event, calibration = gestures.step(frame, calibrate, screen_width, screen_height, context="my_context")
-                
-                # Check if face detected
-                if gaze_event is not None:
-                    face_detected_frames += 1
-                    if face_detected_frames > 10:  # Much simpler threshold
-                        switch_to_calibration_mode()
-        except Exception as e:
-            # If camera fails, show error message
-            error_font = pygame.font.SysFont('Arial', 24)
-            error_text = error_font.render("Camera not available - Press SPACE to continue", True, (255, 255, 0))
-            screen.blit(error_text, (50, screen_height // 2 + 150))
+        # Check if face detected
+        if gaze_event is not None:
+            face_detected_frames += 1
+            if face_detected_frames > 10:  # Much simpler threshold
+                switch_to_calibration_mode()
 
     # ========== CALIBRATION MODE ==========
     elif current_mode == CALIBRATION_MODE:
@@ -224,95 +204,60 @@ while running:
         instruction_text = instruction_font.render("Look at the red circles - Calibration in progress", True, WHITE)
         screen.blit(instruction_text, (50, 50))
         
-        # Show overall progress
-        progress_text = bold_font.render(f"Progress: {iterator}/{n_points}", True, WHITE)
+        # Show progress
+        progress_text = bold_font.render(f"Calibration: {iterator}/{n_points}", True, WHITE)
         screen.blit(progress_text, (50, 100))
         
-        # Process camera for calibration
-        try:
-            ret, frame = cap.read()
-            if ret:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                frame = np.flip(frame, axis=1)
-                
-                # Determine if we're still calibrating
-                calibrate = (iterator < n_points and current_mode == CALIBRATION_MODE)
-                gaze_event, calibration = gestures.step(frame, calibrate, screen_width, screen_height, context="my_context")
-                
-                if calibration is not None:
-                    # Draw red calibration point
-                    pygame.draw.circle(screen, RED, calibration.point, 25)
-                    pygame.draw.circle(screen, WHITE, calibration.point, 25, 3)  # White border
-                    
-                    # Show progress ON the calibration target (current point number)
-                    current_point = iterator + 1 if iterator < n_points else n_points
-                    progress_on_target = bold_font.render(f"{current_point}", True, WHITE)
-                    target_x, target_y = calibration.point
-                    text_rect = progress_on_target.get_rect(center=(target_x, target_y))
-                    screen.blit(progress_on_target, text_rect)
-                    
-                    # Show current gaze position in yellow
-                    if gaze_event and gaze_event.point is not None:
-                        try:
-                            gaze_pos = (int(gaze_event.point[0]), int(gaze_event.point[1]))
-                            pygame.draw.circle(screen, YELLOW, gaze_pos, 15)
-                            pygame.draw.circle(screen, WHITE, gaze_pos, 15, 2)
-                        except (IndexError, TypeError):
-                            pass  # Skip if point is invalid
-                    
-                    # Update calibration progress
-                    if calibration.point[0] != prev_x or calibration.point[1] != prev_y:
-                        iterator += 1
-                        prev_x = calibration.point[0]
-                        prev_y = calibration.point[1]
-                        print(f"📍 Calibration point {iterator}/{n_points} completed")
-                        
-                        # Check if calibration is complete
-                        if iterator >= n_points:
-                            switch_to_tracking_mode()
-                
-        except Exception as e:
-            # Show error if camera processing fails
-            error_text = instruction_font.render("Camera error - Press R to restart", True, (255, 255, 0))
-            screen.blit(error_text, (50, 150))
+        if calibration is not None:
+            # Draw red calibration point
+            pygame.draw.circle(screen, RED, calibration.point, 25)
+            pygame.draw.circle(screen, WHITE, calibration.point, 25, 3)  # White border
+            
+            # Show current gaze position in yellow
+            if gaze_event.point is not None:
+                try:
+                    gaze_pos = (int(gaze_event.point[0]), int(gaze_event.point[1]))
+                    pygame.draw.circle(screen, YELLOW, gaze_pos, 15)
+                    pygame.draw.circle(screen, WHITE, gaze_pos, 15, 2)
+                except (IndexError, TypeError):
+                    pass  # Skip if point is invalid
+            
+            # Update calibration progress
+            if calibration.point[0] != prev_x or calibration.point[1] != prev_y:
+                iterator += 1
+                prev_x = calibration.point[0]
+                prev_y = calibration.point[1]
+                print(f"📍 Calibration point {iterator}/{n_points} completed")
+        
+        # Check if calibration is complete
+        if iterator >= n_points:
+            switch_to_tracking_mode()
     
     # ========== TRACKING MODE ==========
     elif current_mode == TRACKING_MODE:
         # Transparent background
         screen.fill(TRANSPARENT_BLACK)
         
-        # Process camera for tracking
-        try:
-            ret, frame = cap.read()
-            if ret:
-                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                frame = np.flip(frame, axis=1)
+        # Show transparent pink gaze point
+        if gaze_event.point is not None:
+            try:
+                gaze_radius = 25
                 
-                # Get gaze tracking
-                gaze_event, _ = gestures.step(frame, False, screen_width, screen_height, context="my_context")
+                # Get gaze position as integers
+                gaze_x = int(gaze_event.point[0])
+                gaze_y = int(gaze_event.point[1])
                 
-                # Show transparent pink gaze point
-                if gaze_event and gaze_event.point is not None:
-                    try:
-                        gaze_radius = 25
-                        
-                        # Get gaze position as integers
-                        gaze_x = int(gaze_event.point[0])
-                        gaze_y = int(gaze_event.point[1])
-                        
-                        # Draw semi-transparent pink circle for gaze
-                        gaze_surface = pygame.Surface((gaze_radius * 3, gaze_radius * 3), pygame.SRCALPHA)
-                        pygame.draw.circle(gaze_surface, (*PINK, 150), (gaze_radius * 1.5, gaze_radius * 1.5), gaze_radius)
-                        pygame.draw.circle(gaze_surface, (*WHITE, 200), (gaze_radius * 1.5, gaze_radius * 1.5), gaze_radius, 3)
-                        
-                        # Position the gaze circle
-                        surface_x = gaze_x - gaze_radius * 1.5
-                        surface_y = gaze_y - gaze_radius * 1.5
-                        screen.blit(gaze_surface, (surface_x, surface_y))
-                    except (IndexError, TypeError, ValueError):
-                        pass  # Skip if point is invalid
-        except Exception as e:
-            pass  # Continue even if camera fails
+                # Draw semi-transparent pink circle for gaze
+                gaze_surface = pygame.Surface((gaze_radius * 3, gaze_radius * 3), pygame.SRCALPHA)
+                pygame.draw.circle(gaze_surface, (*PINK, 150), (gaze_radius * 1.5, gaze_radius * 1.5), gaze_radius)
+                pygame.draw.circle(gaze_surface, (*WHITE, 200), (gaze_radius * 1.5, gaze_radius * 1.5), gaze_radius, 3)
+                
+                # Position the gaze circle
+                surface_x = gaze_x - gaze_radius * 1.5
+                surface_y = gaze_y - gaze_radius * 1.5
+                screen.blit(gaze_surface, (surface_x, surface_y))
+            except (IndexError, TypeError, ValueError):
+                pass  # Skip if point is invalid
         
         # Optional: Show small status indicator in corner
         status_font = pygame.font.SysFont('Arial', 16)
@@ -332,14 +277,5 @@ while running:
     pygame.display.flip()
     clock.tick(60)
 
-# Clean up and quit
-print("🧹 Cleaning up...")
-try:
-    cap.release()
-    print("📷 Camera released")
-except:
-    pass
-
 # Quit Pygame
 pygame.quit()
-print("✅ Eye tracker closed")

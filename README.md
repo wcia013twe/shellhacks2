@@ -1,6 +1,6 @@
-# Simple Browser Launcher
+# Simple Browser Launcher & Eye Tracker
 
-A modular browser launcher application with timer functionality and eye tracking integration.
+This project consists of two separate, independent applications for web browsing and eye tracking.
 
 ## Features
 
