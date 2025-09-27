@@ -1,6 +1,7 @@
 # Core browser functionality
 pywebview>=4.0.0
 
+
 # Eye tracking dependencies 
 opencv-python>=4.5.0  # For computer vision-based eye tracking
 mediapipe>=0.10.0     # For face/eye landmark detection  
