@@ -1,0 +1,52 @@
+# Requirements for Simple Browser Launcher & Eye Tracker
+# Generated with: pip freeze
+
+# =============================================================================
+# CORE BROWSER DEPENDENCIES (Required for main.py)
+# =============================================================================
+pywebview==6.0              # Web browser framework
+PyQt5==5.15.11              # GUI framework for pywebview
+PyQt5-Qt5==5.15.2           # PyQt5 Qt bindings
+PyQt5_sip==12.17.0          # PyQt5 SIP bindings
+
+# =============================================================================
+# EYE TRACKING DEPENDENCIES (Required for run_eye_tracker.py)
+# =============================================================================
+eyeGestures==3.2.4          # Eye tracking and gesture recognition
+opencv-python==4.11.0.86    # Computer vision library
+pygame==2.6.1               # Game development library for overlays
+numpy==1.26.4               # Numerical computing
+scikit-learn==1.7.2         # Machine learning library
+mediapipe==0.10.21          # ML solutions for perception tasks
+
+# =============================================================================
+# SUPPORTING DEPENDENCIES
+# =============================================================================
+requests==2.32.5            # HTTP library
+pillow==11.3.0               # Image processing
+matplotlib==3.10.6          # Plotting library
+scipy==1.16.2               # Scientific computing
+
+# =============================================================================
+# TENSORFLOW/ML STACK (for advanced eye tracking features)
+# =============================================================================
+tensorflow==2.20.0          # Machine learning framework
+keras==3.11.3               # High-level neural networks API
+tensorboard==2.20.0         # TensorFlow visualization
+absl-py==2.3.1              # Abseil Python libraries
+astunparse==1.6.3           # AST unparser
+grpcio==1.75.1              # gRPC framework
+protobuf==6.32.1            # Protocol buffers
+
+# =============================================================================
+# UTILITY DEPENDENCIES
+# =============================================================================
+screeninfo==0.8.1           # Screen information
+imutils==0.5.4              # Image processing utilities
+rich==14.1.0                # Rich text and beautiful formatting
+setuptools==80.9.0          # Package development
+wheel==0.45.1               # Built package format
+
+# =============================================================================
+# FULL FREEZE OUTPUT (All dependencies with exact versions)
+# =============================================================================

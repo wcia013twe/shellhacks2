@@ -1,0 +1,22 @@
+# Minimal Requirements for Simple Browser Launcher & Eye Tracker
+
+# Core Browser Dependencies (for main.py)
+pywebview>=6.0
+PyQt5>=5.15.11
+
+# Eye Tracking Dependencies (for run_eye_tracker.py)  
+eyeGestures>=3.2.4
+opencv-python>=4.11.0
+pygame>=2.6.1
+numpy>=1.26.4
+scikit-learn>=1.7.2
+mediapipe>=0.10.21
+
+# Supporting Libraries
+requests>=2.32.5
+pillow>=11.3.0
+
+# Note: Install only what you need:
+# - For browser only: pip install pywebview PyQt5
+# - For eye tracking only: pip install eyeGestures opencv-python pygame numpy scikit-learn mediapipe
+# - For everything: pip install -r requirements-minimal.txt

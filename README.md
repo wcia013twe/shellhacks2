@@ -2,6 +2,30 @@
 
 This project consists of two separate, independent applications for web browsing and eye tracking.
 
+## 📦 Installation
+
+### Option 1: Install Everything
+
+```bash
+pip install -r requirements.txt  # Full freeze with exact versions
+```
+
+### Option 2: Install Minimal Dependencies
+
+```bash
+pip install -r requirements-minimal.txt  # Only essential packages
+```
+
+### Option 3: Install by Component
+
+```bash
+# For browser only
+pip install pywebview PyQt5
+
+# For eye tracking only
+pip install eyeGestures opencv-python pygame numpy scikit-learn mediapipe
+```
+
 ## Features
 
 - **Time-Limited Browsing**: Set automatic browser close timers
