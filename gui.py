@@ -9,6 +9,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
 import time
+import webbrowser
 try:
     import webview
 except ImportError:
@@ -270,3 +271,59 @@ class SimpleBrowserLauncher:
         self.url_entry.focus_set()
         self.url_entry.select_range(0, 'end')
         self.root.mainloop()
+    def load_file(self, file_path):
+    """Load a local file into the browser."""
+    # Check if the file exists
+    if not os.path.isfile(file_path):
+        messagebox.showerror("Error", f"File not found: {file_path}")
+        return
+
+    # Validate file extension (optional, based on your requirements)
+    valid_extensions = {'.html', '.htm'}
+    if not Path(file_path).suffix.lower() in valid_extensions:
+        messagebox.showerror("Error", "Invalid file type. Only HTML files are supported.")
+        return
+
+    # Convert the file path to a file:// URL
+    try:
+        file_url = Path(file_path).absolute().as_uri()
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to convert file path to URL:\n{e}")
+        return
+
+    # Check if PyWebView is installed
+    if webview is None:
+        messagebox.showerror(
+            "Error",
+            "PyWebView is not installed.\nInstall it with: pip install pywebview"
+        )
+        return
+
+    self.status_var.set(f"Loading file: {file_path}")
+    self.launch_btn.config(state='disabled')
+
+    try:
+        # Hide the root window (optional)
+        self.root.withdraw()
+
+        # Open the file in the browser window
+        self.webview_window = webview.create_window(
+            'File Viewer',
+            file_url,
+            width=1024,
+            height=768,
+            fullscreen=False,
+            maximized=True
+        )
+        webview.start()
+        self.status_var.set(f"File loaded successfully: {file_path}")
+
+    except Exception as e:
+        messagebox.showerror("Error", f"Failed to load file:\n{e}")
+        self.status_var.set("Error loading file")
+
+    finally:
+        # Restore the root window and reset the UI
+        self.root.deiconify()
+        self.launch_btn.config(state='normal')
+        self.status_var.set("Ready - Enter a URL or load a file")
