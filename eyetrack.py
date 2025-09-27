@@ -1,14 +1,15 @@
 from eyeGestures.utils import VideoCapture
-from eyeGestures import EyeGestures_v3
+from eyeGestures import EyeGestures_v2
+import cv2
 
 # Initialize gesture engine and video capture
-gestures = EyeGestures_v3()
-cap = VideoCapture(0)
+gestures = EyeGestures_v2()
+cap = VideoCapture(0)  # Use DirectShow backend  
 calibrate = True
 screen_width = 500
 screen_height= 500
 
-# Process each frame
+# Process each frame    npm create vite@latest my-vite-app
 while True:
   ret, frame = cap.read()
   event, cevent = gestures.step(frame,
@@ -20,5 +21,4 @@ while True:
   if event:
     cursor_x, cursor_y = event.point[0], event.point[1]
     fixation = event.fixation
-    saccades = event.saccadess # saccadess movement detector
     # calibration_radius: radius for data collection during calibration
