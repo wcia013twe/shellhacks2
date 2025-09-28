@@ -34,7 +34,19 @@ class BrowserManager:
         """Validate and normalize the URL."""
         if not url:
             return None, "Please enter a URL"
+        
+        # Clean up any malformed URLs first
+        url = url.strip()
+        
+        # Fix common malformed patterns
+        if url.startswith('https://https://'):
+            url = url.replace('https://https://', 'https://')
+        elif url.startswith('http://https://'):
+            url = url.replace('http://https://', 'https://')
+        elif url.startswith('https://http://'):
+            url = url.replace('https://http://', 'http://')
             
+        # Add protocol if missing
         if not url.startswith(('http://', 'https://')):
             url = 'https://' + url
             
@@ -198,8 +210,12 @@ class BrowserManager:
                 EC.presence_of_element_located((By.TAG_NAME, "body"))
             )
             
-            # Inject sidebar overlay
-            self._inject_sidebar_overlay()
+            # Inject sidebar overlay (skip if fails due to security policies)
+            try:
+                self._inject_sidebar_overlay()
+            except Exception as e:
+                print(f"⚠️ Sidebar injection skipped (security restrictions): {str(e)[:100]}...")
+                # Continue without sidebar - this is not critical
             
             print("✅ Browser launched successfully!")
             print("💡 Features:")
