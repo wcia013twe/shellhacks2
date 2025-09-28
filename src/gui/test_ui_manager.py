@@ -1322,45 +1322,83 @@ class TestUIManager:
         if file_path:
             self.loaded_file_var.set(os.path.basename(file_path))
             
-            # Mock test data (in real implementation, would load from JSON)
-            mock_test_data = {
-                'filename': 'youtube2mintest',
-                'url': 'https://www.youtube.com',
-                'duration': '2 minutes',
-                'destination': file_path,
-                'components': {
-                    'Eye Movement': 75,
-                    'Fixation Duration': 80,
-                    'Saccade Speed': 60,
-                    'Pupil Dilation': 90
-                }
-            }
-            
-            self.current_test_data = mock_test_data
-            self.update_test_details()
-            self.start_test_btn.config(state='normal')
+            try:
+                # Actually load and parse the JSON file
+                import json
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    loaded_test_data = json.load(f)
+                
+                # Add the file path to the loaded data
+                loaded_test_data['source_file'] = file_path
+                
+                self.current_test_data = loaded_test_data
+                self.update_test_details()
+                self.start_test_btn.config(state='normal')
+                
+                print(f"✅ Successfully loaded test file: {os.path.basename(file_path)}")
+                
+            except json.JSONDecodeError as e:
+                # Handle invalid JSON
+                messagebox.showerror(
+                    "Invalid JSON File", 
+                    f"The selected file is not a valid JSON file.\n\nError: {str(e)}"
+                )
+                self.loaded_file_var.set("Invalid JSON file")
+                self.update_test_details("❌ Invalid JSON file selected. Please choose a valid .json test profile.")
+                
+            except Exception as e:
+                # Handle other file reading errors
+                messagebox.showerror(
+                    "File Error", 
+                    f"Unable to read the selected file.\n\nError: {str(e)}"
+                )
+                self.loaded_file_var.set("Error reading file")
+                self.update_test_details("❌ Error reading file. Please try selecting a different file.")
     
     def update_test_details(self, message=None):
-        """Update the test details display."""
+        """Update the test details display with actual JSON content."""
         self.details_text.config(state='normal')
         self.details_text.delete('1.0', tk.END)
         
         if message:
             self.details_text.insert('1.0', message)
         else:
-            details = f"""Test Configuration Details:
-
-Filename: {self.current_test_data.get('filename', 'N/A')}
-URL: {self.current_test_data.get('url', 'N/A')}
-Duration: {self.current_test_data.get('duration', 'N/A')}
-
-Component Configuration:"""
+            # Display the actual JSON content in a readable format
+            import json
             
-            if 'components' in self.current_test_data:
-                for component, value in self.current_test_data['components'].items():
-                    details += f"\n  • {component}: {value}%"
+            details = "📁 Loaded Test Configuration:\n"
+            details += "=" * 50 + "\n\n"
             
-            details += f"\n\nProfile Location: {self.current_test_data.get('destination', 'N/A')}"
+            # Show source file info
+            if 'source_file' in self.current_test_data:
+                details += f"📂 Source File: {os.path.basename(self.current_test_data['source_file'])}\n"
+                details += f"📍 Full Path: {self.current_test_data['source_file']}\n\n"
+            
+            # Show formatted JSON content
+            try:
+                # Create a copy without the source_file for cleaner display
+                display_data = {k: v for k, v in self.current_test_data.items() if k != 'source_file'}
+                
+                # Format as readable JSON
+                formatted_json = json.dumps(display_data, indent=2, ensure_ascii=False)
+                
+                details += "📋 Test Configuration (JSON Content):\n"
+                details += "-" * 30 + "\n"
+                details += formatted_json
+                
+            except Exception as e:
+                # Fallback to simple key-value display if JSON formatting fails
+                details += "📋 Test Configuration (Key-Value):\n"
+                details += "-" * 30 + "\n"
+                
+                for key, value in self.current_test_data.items():
+                    if key != 'source_file':
+                        if isinstance(value, dict):
+                            details += f"{key}:\n"
+                            for sub_key, sub_value in value.items():
+                                details += f"  • {sub_key}: {sub_value}\n"
+                        else:
+                            details += f"{key}: {value}\n"
             
             self.details_text.insert('1.0', details)
         
@@ -1372,53 +1410,73 @@ Component Configuration:"""
         self.clear_window()
         self.create_header("Ready to Start Test", "Review test details and begin when ready")
         
-        main_frame = ttk.Frame(self.root)
-        main_frame.pack(fill='both', expand=True, padx=40, pady=30)
+        # Create scrollable main content
+        canvas = tk.Canvas(self.root)
+        scrollbar = ttk.Scrollbar(self.root, orient="vertical", command=canvas.yview)
+        scrollable_frame = ttk.Frame(canvas)
         
-        # Test info card
-        card_frame = ttk.LabelFrame(main_frame, text="Test Information", padding=20)
-        card_frame.pack(fill='x', pady=(0, 30))
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Enable trackpad scrolling on canvas
+        canvas.bind("<MouseWheel>", lambda e: self.canvas_trackpad_scroll(canvas, e))
+        canvas.bind("<Button-4>", lambda e: self.canvas_trackpad_scroll(canvas, e))
+        canvas.bind("<Button-5>", lambda e: self.canvas_trackpad_scroll(canvas, e))
+        canvas.focus_set()
+        
+        # Content frame with reduced padding
+        main_frame = ttk.Frame(scrollable_frame)
+        main_frame.pack(fill='both', expand=True, padx=30, pady=20)
+        
+        # Test info card (more compact)
+        card_frame = ttk.LabelFrame(main_frame, text="Test Information", padding=15)
+        card_frame.pack(fill='x', pady=(0, 15))
         
         # Test name (large)
         name_label = ttk.Label(
             card_frame,
             text=self.current_test_data.get('usershown', 'Test Name'),
-            font=('Arial', 16, 'bold')
+            font=('Arial', 14, 'bold')
         )
-        name_label.pack(pady=(0, 10))
+        name_label.pack(pady=(0, 8))
         
         # URL
         url_frame = ttk.Frame(card_frame)
-        url_frame.pack(fill='x', pady=5)
+        url_frame.pack(fill='x', pady=3)
         ttk.Label(url_frame, text="Website:", font=('Arial', 10, 'bold')).pack(side='left')
         ttk.Label(url_frame, text=self.current_test_data.get('url', 'N/A')).pack(side='left', padx=(10, 0))
         
         # Duration
         duration_frame = ttk.Frame(card_frame)
-        duration_frame.pack(fill='x', pady=5)
+        duration_frame.pack(fill='x', pady=3)
         ttk.Label(duration_frame, text="Duration:", font=('Arial', 10, 'bold')).pack(side='left')
         ttk.Label(duration_frame, text=self.current_test_data.get('duration', 'N/A')).pack(side='left', padx=(10, 0))
         
-        # Instructions
-        instructions_frame = ttk.LabelFrame(main_frame, text="Instructions", padding=15)
-        instructions_frame.pack(fill='x', pady=(0, 30))
+        # Instructions (more compact)
+        instructions_frame = ttk.LabelFrame(main_frame, text="Instructions", padding=12)
+        instructions_frame.pack(fill='x', pady=(0, 15))
         
         instructions_text = """1. Click 'Start Test' when you're ready to begin
-2. The browser will open automatically to the specified website
+2. The browser will open automatically to the specified website  
 3. Browse naturally - the eye tracker will monitor your activity
 4. The test will automatically end after the specified duration
 5. Keep your head steady and eyes focused on the screen"""
         
-        ttk.Label(instructions_frame, text=instructions_text, justify='left').pack()
+        ttk.Label(instructions_frame, text=instructions_text, justify='left', font=('Arial', 9)).pack()
         
-        # Placeholder image
+        # Smaller placeholder image or remove it to save space
         image_frame = ttk.Frame(main_frame)
-        image_frame.pack(pady=20)
-        self.create_placeholder_image(image_frame, 250, 150)
+        image_frame.pack(pady=10)
+        self.create_placeholder_image(image_frame, 200, 100)
         
-        # Action buttons
+        # IMPORTANT: Action buttons - always visible at the bottom
         button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill='x', pady=30)
+        button_frame.pack(fill='x', pady=(20, 10))
         
         start_btn = ttk.Button(
             button_frame,
@@ -1430,36 +1488,230 @@ Component Configuration:"""
         
         back_btn = ttk.Button(button_frame, text="Back", command=self.show_load_test_screen)
         back_btn.pack(side='right')
+        
+        # Pack scrollable content
+        canvas.pack(side="left", fill="both", expand=True, padx=20)
+        scrollbar.pack(side="right", fill="y")
+        
+        # Force canvas to update and ensure buttons are visible
+        self.root.update_idletasks()
+        canvas.configure(scrollregion=canvas.bbox("all"))
     
     def start_actual_test(self):
-        """Start the actual test with integration to existing browser system."""
+        """Start the actual test with eye tracker calibration first."""
+        # Show calibration dialog and start calibration
+        self.show_calibration_dialog()
+    
+    def show_calibration_dialog(self):
+        """Show calibration preparation dialog."""
+        # Create calibration dialog with adjusted size
+        calibration_window = tk.Toplevel(self.root)
+        calibration_window.title("Eye Tracker Calibration")
+        calibration_window.geometry("400x280")
+        calibration_window.configure(bg='#f0f0f0')
+        calibration_window.transient(self.root)
+        calibration_window.grab_set()
+        
+        # Center the window
+        calibration_window.update_idletasks()
+        x = (calibration_window.winfo_screenwidth() // 2) - (400 // 2)
+        y = (calibration_window.winfo_screenheight() // 2) - (280 // 2)
+        calibration_window.geometry(f"+{x}+{y}")
+        
+        # Header - more compact
+        header_frame = ttk.Frame(calibration_window)
+        header_frame.pack(fill='x', padx=15, pady=15)
+        
+        ttk.Label(header_frame, text="🎯 Eye Tracker Calibration", 
+                 font=('Arial', 14, 'bold')).pack()
+        ttk.Label(header_frame, text="Get ready for calibration", 
+                 font=('Arial', 9), foreground='gray').pack(pady=(3, 0))
+        
+        # Simplified Instructions
+        instructions_frame = ttk.LabelFrame(calibration_window, text="Quick Setup", padding=12)
+        instructions_frame.pack(fill='x', padx=15, pady=(0, 15))
+        
+        # Much shorter, simplified text
+        instructions_text = """• Sit 18-24 inches from your camera
+• Ensure good lighting on your face  
+• Follow the green dots with your eyes
+• Keep your head still during calibration
+• Takes about 60 seconds"""
+        
+        ttk.Label(instructions_frame, text=instructions_text, justify='left', 
+                 font=('Arial', 9)).pack(anchor='w')
+        
+        # Action buttons - ensure they're always visible
+        button_frame = ttk.Frame(calibration_window)
+        button_frame.pack(side='bottom', fill='x', padx=15, pady=15)
+        
+        # Info label for calibration status
+        self.calibration_status_var = tk.StringVar(value="")
+        status_label = ttk.Label(calibration_window, textvariable=self.calibration_status_var, foreground='blue', font=('Arial', 9))
+        status_label.pack(side='bottom', pady=(0, 5))
+
+        def on_start_calibration():
+            self.calibration_status_var.set("Calibration may take up to a minute. Please follow the on-screen instructions.")
+            calibration_window.update_idletasks()
+            self.start_eye_tracker_calibration(calibration_window)
+
+        start_cal_btn = ttk.Button(
+            button_frame,
+            text="🚀 Start Calibration",
+            command=on_start_calibration,
+            style='Accent.TButton'
+        )
+        start_cal_btn.pack(side='left')
+
+        cancel_btn = ttk.Button(
+            button_frame,
+            text="Cancel",
+            command=calibration_window.destroy
+        )
+        cancel_btn.pack(side='right')
+
+        # Force the window to update and ensure proper sizing
+        calibration_window.update_idletasks()
+    
+    def start_eye_tracker_calibration(self, calibration_window):
+        """Start the eye tracker calibration process."""
         try:
-            # Import the integrated test runner
+            # Import and initialize eye tracker
+            import sys
+            import os
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+            
+            from eye_tracking.EyeTracker import EyeTracker
+            
+            # Close calibration dialog
+            calibration_window.destroy()
+            
+            # Hide main window during calibration
+            self.root.withdraw()
+            
+            # Initialize and run calibration
+            print("🔧 Initializing EyeTracker for calibration...")
+            tracker = EyeTracker()
+            
+            print("🎯 Starting calibration with 25 points...")
+            calibration_success = tracker.recalibrate(3)  #TODO UPDATE BACK TO 30 Points ON DEPLOY
+            
+            # Show main window again
+            self.root.deiconify()
+            
+            if calibration_success:
+                # Calibration successful, proceed with test
+                messagebox.showinfo("Calibration Complete", 
+                                  "✅ Eye tracker calibration completed successfully!\n\n" +
+                                  "🚀 The test will now begin.\n" +
+                                  "The browser will open to start your session.")
+                self.proceed_with_test_after_calibration()
+            else:
+                # Calibration failed or cancelled
+                messagebox.showwarning("Calibration Cancelled", 
+                                     "⚠️ Eye tracker calibration was cancelled.\n\n" +
+                                     "The test cannot proceed without calibration.\n" +
+                                     "Please try again when ready.")
+                
+        except Exception as e:
+            # Show main window again in case of error
+            self.root.deiconify()
+            messagebox.showerror("Calibration Error", 
+                               f"❌ Failed to start eye tracker calibration:\n\n{str(e)}\n\n" +
+                               "You can proceed with the test, but eye tracking may not work properly.")
+            # Ask user if they want to proceed anyway
+            proceed = messagebox.askyesno("Continue Without Calibration?", 
+                                        "Would you like to continue with the test anyway?\n\n" +
+                                        "⚠️ Eye tracking data may not be accurate.")
+            if proceed:
+                self.proceed_with_test_after_calibration()
+    
+    def proceed_with_test_after_calibration(self):
+        """Continue with the actual test after calibration is complete."""
+        import threading, time
+        try:
             from .integrated_test_runner import IntegratedTestManager
-            
-            # Create and start the integrated test
+            from eye_tracking.EyeTracker import EyeTracker
+            import sys, os
+            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+
+            # Duration in minutes (float)
+            duration_str = self.current_test_data.get('duration', '2')
+            try:
+                if 'min' in duration_str.lower():
+                    duration = float(duration_str.lower().replace('min', '').replace('utes', '').strip())
+                else:
+                    duration = float(duration_str)
+            except:
+                duration = 2.0
+            duration_sec = int(duration * 60)
+
+            # Start browser
             test_manager = IntegratedTestManager(self.current_test_data)
-            
+            browser_started = threading.Event()
+
+            def on_browser_ready():
+                print("🌐 Browser is ready. Starting eye tracking...")
+                browser_started.set()
+
             def on_test_complete():
-                """Called when the test completes."""
                 print("✅ Test completed - returning to post-test screen")
-                # Show the window again and go to post-test screen
                 self.root.deiconify()
                 self.show_post_test_screen()
-            
-            # Start the test with the browser integration
-            success = test_manager.start_test_with_browser(completion_callback=on_test_complete)
-            
-            if success:
-                # Hide the current window while test runs
-                self.root.withdraw()
-                messagebox.showinfo("Test Started", "Eye tracking test has begun!\nThe browser will open shortly.")
-            else:
-                messagebox.showerror("Error", "Failed to start the test")
-                
+
+            # Start browser in background
+            def browser_thread():
+                test_manager.start_test_with_browser(completion_callback=on_test_complete)
+
+            threading.Thread(target=browser_thread, daemon=True).start()
+
+            # Wait for browser to be ready (or just a short delay)
+            time.sleep(3)
+
+            # Start eye tracker in background
+
+            def eye_tracker_thread():
+                tracker = EyeTracker()
+                tracker.is_calibrated = True  # Already calibrated
+                print("👁️ Eye tracking started. Using track() method...")
+                try:
+                    tracker.track(duration_sec, debug=True) # TODO UPDATE ON DEPLOY
+                except Exception as e:
+                    print(f"Eye tracking error: {e}")
+                print("👁️ Eye tracking finished.")
+                # Release camera
+                if hasattr(tracker, 'cap') and tracker.cap:
+                    try:
+                        tracker.cap.release()
+                    except Exception:
+                        pass
+
+            eye_thread = threading.Thread(target=eye_tracker_thread, daemon=True)
+            eye_thread.start()
+
+            # Hide the current window while test runs
+            self.root.withdraw()
+            messagebox.showinfo("Test Started", 
+                f"🚀 Eye tracking test has begun!\n\n🌐 The browser will open shortly\n👁️ Eye tracking is now active\n⏱️ Test will run for {duration} minutes.")
+
+            # Wait for the test duration, then show report
+            def finish_after_time():
+                time.sleep(duration_sec)
+                print("⏰ Test duration complete. Closing browser and showing report.")
+                # Attempt to close browser
+                try:
+                    if hasattr(test_manager, 'browser_manager') and hasattr(test_manager.browser_manager, 'close_browser'):
+                        test_manager.browser_manager.close_browser()
+                except Exception as e:
+                    print(f"Error closing browser: {e}")
+                # Show report
+                self.root.after(0, self.show_post_test_screen)
+
+            threading.Thread(target=finish_after_time, daemon=True).start()
+
         except ImportError as e:
-            # Fallback to demo mode if integration isn't available
-            messagebox.showinfo("Demo Mode", "Test integration not available.\nRunning in demo mode...")
+            messagebox.showinfo("Demo Mode", 
+                "⚠️ Test integration not available.\n\nRunning in demo mode...\nThis will simulate a test completion.")
             self.root.after(3000, self.show_post_test_screen)
     
     # ==================== POST TEST SCREEN ====================

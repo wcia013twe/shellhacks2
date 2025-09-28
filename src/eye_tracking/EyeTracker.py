@@ -121,9 +121,9 @@ class EyeTracker:
         """Generate calibration points with guaranteed corner/edge coverage"""
         
         # Ensure minimum points
-        if num_points < 12:
-            num_points = 12
-            print(f"⚠️  Minimum 12 points required. Using {num_points} points.")
+        # if num_points < 12:
+        #     num_points = 12
+        #     print(f"⚠️  Minimum 12 points required. Using {num_points} points.")
         
         # Essential points: 4 corners + 4 edge midpoints + center = 9 points
         essential_points = [
