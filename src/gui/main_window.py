@@ -7,6 +7,7 @@ all the different components (GUI, timer, browser, eye tracking).
 
 import tkinter as tk
 from tkinter import ttk, messagebox
+import threading
 
 from ..timer import BrowserTimer
 from ..browser import BrowserManager
@@ -113,32 +114,56 @@ class SimpleBrowserLauncher:
         else:
             config_info.append("No time limit")
             
-        self.status_var.set(f"Launching: {url} ({', '.join(config_info)})")
-        self.launch_btn.config(state='disabled')
+        self.status_var.set(f"🚀 Starting Chrome browser...")
+        self.launch_btn.config(state='disabled', text="Loading...")
         
         try:
-            # Start timer if time limit is set (start it in a separate thread to not block)
+            # Prepare timer callback to start only when browser is ready
+            def start_timer_when_ready():
+                if time_limit > 0:
+                    print(f"🕐 Starting {time_limit} minute timer now that browser is ready...")
+                    self.timer_manager.start_timer(time_limit, None)
+                    self.status_var.set(f"Browser ready! Timer: {time_limit} min")
+                else:
+                    print("✅ Browser ready! No time limit set.")
+                    self.status_var.set("Browser ready! No time limit")
+            
+            # Launch browser in separate thread so UI doesn't freeze
+            def browser_thread():
+                try:
+                    if time_limit > 0:
+                        success, result = self.browser_manager.launch_browser(url, self.root, start_timer_when_ready)
+                    else:
+                        success, result = self.browser_manager.launch_browser(url, self.root, start_timer_when_ready)
+                    
+                    # The browser launch is complete at this point (either closed by user or timer)
+                    
+                    # Stop timer when browser closes
+                    self.timer_manager.stop_timer()
+                    print("Browser session ended.")
+                    self.status_var.set("Browser session ended")
+                    
+                except Exception as e:
+                    print(f"Browser thread error: {e}")
+                finally:
+                    # Re-enable the button
+                    self.launch_btn.config(state='normal', text="Open Browser")
+                    if not self.status_var.get().startswith("Browser session ended"):
+                        self.status_var.set("Ready - Enter a URL and click Open Browser")
+            
+            # Start browser in separate thread
             if time_limit > 0:
-                # Start timer - it will wait for browser initialization
-                self.timer_manager.start_timer(time_limit, None)
+                self.status_var.set(f"Loading browser... Timer will start when ready")
             else:
-                print("Time limit set to 0 - Browser session is unlimited")
-            
-            # Launch browser (this will block until browser closes)
-            success, result = self.browser_manager.launch_browser(url, self.root)
-            
-            # The browser launch is complete at this point (either closed by user or timer)
-            
-            # Stop timer when browser closes
-            self.timer_manager.stop_timer()
-            print("Browser session ended.")
+                self.status_var.set(f"Loading browser...")
+                
+            browser_thread_obj = threading.Thread(target=browser_thread, daemon=True)
+            browser_thread_obj.start()
             
         except Exception as e:
             messagebox.showerror("Error", f"Failed to launch browser: {e}")
             self.status_var.set("Error launching browser")
-        finally:
-            self.launch_btn.config(state='normal')
-            self.status_var.set("Ready - Enter a URL and click Open Browser")
+            self.launch_btn.config(state='normal', text="Open Browser")
 
     def load_quick_link(self, url):
         """Load a quick link URL into the entry field and launch browser."""
