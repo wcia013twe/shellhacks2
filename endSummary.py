@@ -2,6 +2,14 @@ import os
 import google.generativeai as genai
 from dotenv import load_dotenv
 from supabase import create_client
+import uuid
+
+
+RUN_ID = str(uuid.uuid4())
+print("Using run_id:", RUN_ID)
+with open("current_run_id.txt", "r") as f:
+    RUN_ID = f.read().strip()
+print("Using run_id from GemSuggest.py:", RUN_ID)
 
 load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY_SECOND")
@@ -17,7 +25,7 @@ supabase = create_client(supabase_url, supabase_key)
 
 def store_summary_in_supabase(summary_text):
     """Insert summary into Supabase."""
-    data_row = {"summary": summary_text}
+    data_row = {"summary": summary_text,"run_id": RUN_ID}
     response = supabase.table("gemini_summary").insert(data_row).execute()
     if response.data:
         print("✅ Stored summary of weaknesses in Supabase.")
@@ -27,8 +35,11 @@ def store_summary_in_supabase(summary_text):
 def generate_summary():
     """Fetch explanations and generate overall weaknesses summary."""
     # Fetch all explanations
-    response = supabase.table("gemini_explanations").select("explanation").execute()
-    explanations = [row["explanation"] for row in response.data]
+    response = supabase.table("gemini_explanations") \
+            .select("explanation") \
+            .eq("run_id", RUN_ID) \
+            .execute()
+
 
     if not explanations:
         print("⚠️ No explanations found, skipping summary.")

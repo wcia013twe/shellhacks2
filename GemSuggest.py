@@ -4,9 +4,15 @@ import google.generativeai as genai
 from dotenv import load_dotenv
 from gui import SimpleBrowserLauncher
 from supabase import create_client
-import data  # <-- old import style
+import data 
+import uuid
 
 # Load environment variables
+
+RUN_ID = str(uuid.uuid4())
+print("Using run_id:", RUN_ID)
+with open("current_run_id.txt", "w") as f:
+    f.write(RUN_ID)
 
 load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
@@ -108,6 +114,7 @@ HTML Component:
         actual_attention=actual_attention,
         # ranking_score=ranking_score,
         explanation=explanation.strip()
+        "run_id": RUN_ID
     )
 
     # Save HTML locally
