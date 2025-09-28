@@ -502,7 +502,19 @@ class TestUIManager:
         
         # Launch browser with element ranking script
         try:
-            from ..browser import BrowserManager
+            # Try multiple import methods to ensure compatibility
+            try:
+                from ..browser import BrowserManager
+            except ImportError:
+                try:
+                    from src.browser import BrowserManager
+                except ImportError:
+                    import sys
+                    import os
+                    browser_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'browser')
+                    sys.path.insert(0, browser_path)
+                    from browser_manager import BrowserManager
+            
             browser_manager = BrowserManager()
             
             # Debug URL thoroughly
@@ -550,7 +562,30 @@ class TestUIManager:
                         except Exception as monitor_error:
                             print(f"Monitor error: {monitor_error}")
                         
+                        # Handle any pending alerts before checking component data
+                        try:
+                            # Check if there's an alert and dismiss it
+                            alert = browser_manager.driver.switch_to.alert
+                            alert_text = alert.text
+                            print(f"📋 Dismissing completion alert: {alert_text[:50]}...")
+                            alert.accept()  # Dismiss the alert
+                        except:
+                            # No alert present, continue normally
+                            pass
+                        
+                        # Small delay to ensure alert is properly dismissed
+                        time.sleep(0.5)
+                        
                         # Check if we received component data
+                        try:
+                            # Try to get component config from browser's window object
+                            component_data = browser_manager.inject_javascript("return window.__componentConfig || null;")
+                            if component_data:
+                                self.temp_component_data = component_data
+                                print("🔄 Retrieved component data from browser:", component_data)
+                        except Exception as data_error:
+                            print(f"⚠️ Could not retrieve component data: {data_error}")
+                        
                         if hasattr(self, 'temp_component_data') and self.temp_component_data:
                             self.component_config_data = self.temp_component_data
                             self.component_status_var.set(f"✅ Configuration complete - {len(self.component_config_data.get('ranks', {}))} importance levels set")
@@ -870,11 +905,42 @@ class TestUIManager:
                 console.log('Close failed:', e1);
               }
               
-              // Always show persistent completion message (doesn't auto-dismiss)
-              // This will stay until the browser is manually closed
+              // Show console message and toast instead of alert to avoid interference
+              console.log('✅ Configuration saved successfully! Browser can be closed now.');
+              
+              // Show a toast notification instead of alert
+              const notificationToast = document.createElement('div');
+              notificationToast.style.cssText = `
+                position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+                z-index: 2147483647; background: #0b1220; color: #e6f0ff; padding: 20px 30px;
+                border-radius: 12px; font: 16px/1.4 system-ui; text-align: center;
+                box-shadow: 0 10px 40px rgba(0,0,0,0.6); border: 2px solid #00ff00;
+                max-width: 400px; animation: successFade 8s ease-out forwards;
+              `;
+              notificationToast.innerHTML = `
+                <div style="font-size: 24px; margin-bottom: 10px;">✅</div>
+                <div style="font-weight: bold; margin-bottom: 10px; color: #00ff88;">Configuration Saved Successfully!</div>
+                <div style="font-size: 14px; opacity: 0.9;">You can now close this browser window:<br>• Press Ctrl+W, or<br>• Click the X button</div>
+              `;
+              
+              // Add fade animation
+              const toastStyle = document.createElement('style');
+              toastStyle.textContent = `
+                @keyframes successFade {
+                  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+                  10% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+                  90% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+                  100% { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+                }
+              `;
+              document.head.appendChild(toastStyle);
+              document.body.appendChild(notificationToast);
+              
+              // Auto-remove after animation
               setTimeout(() => {
-                alert('✅ Configuration saved successfully!\\n\\nPlease close this browser window now:\\n• Press Ctrl+W, or\\n• Click the X button in the top-right corner');
-              }, 100);
+                notificationToast?.remove();
+                toastStyle?.remove();
+              }, 8000);
               
               return; 
             }
@@ -1038,30 +1104,125 @@ class TestUIManager:
             self.dest_path_var.set(folder_path)
     
     def save_test_config(self):
-        """Save the test configuration."""
-        # Collect all form data
-        config_data = {}
+        """Save the test configuration to JSON files."""
+        import json
+        import os
+        from datetime import datetime
+        
+        # Check if destination path is set
+        destination_path = self.dest_path_var.get().strip()
+        if not destination_path:
+            messagebox.showerror("Error", "Please select a destination folder before saving the configuration.")
+            return
+        
+        # Validate destination path exists
+        if not os.path.exists(destination_path):
+            messagebox.showerror("Error", f"Destination path does not exist: {destination_path}")
+            return
+        
+        # Collect test configuration data (filename, URL, duration)
+        test_config = {}
         for field_name, entry in self.setup_entries.items():
-            config_data[field_name] = entry.get()
+            value = entry.get().strip()
+            if not value:
+                messagebox.showerror("Error", f"Please fill in the {field_name} field.")
+                return
+            test_config[field_name] = value
         
-        config_data['destination'] = self.dest_path_var.get()
+        # Add metadata
+        test_config['created_at'] = datetime.now().isoformat()
+        test_config['config_version'] = '1.0'
         
-        # Include component configuration data if available
-        if hasattr(self, 'component_config_data') and self.component_config_data:
-            config_data['component_configuration'] = self.component_config_data
-            component_info = f"\n\nComponent Configuration: ✅ {len(self.component_config_data.get('ranks', {}))} importance levels"
+        # Create filename for the test config
+        config_filename = test_config.get('filename', 'test_config')
+        if not config_filename.endswith('.json'):
+            config_filename += '_config.json'
         else:
-            config_data['component_configuration'] = None
-            component_info = "\n\nComponent Configuration: ⚠️ Not configured"
+            config_filename = config_filename.replace('.json', '_config.json')
         
-        # Show confirmation
-        messagebox.showinfo("Configuration Saved", 
-                          f"Test configuration saved!\n\nFilename: {config_data.get('filename', 'N/A')}{component_info}")
+        config_file_path = os.path.join(destination_path, config_filename)
         
-        # Store for later use
-        self.current_test_data = config_data
-        
-        print("💾 Saved test configuration:", {k: v if k != 'component_configuration' else f"<ComponentConfig with {len(v.get('ranks', {}) if v else {})} ranks>" for k, v in config_data.items()})
+        try:
+            # Create the final configuration filename (removing _config suffix for cleaner name)
+            final_filename = test_config.get('filename', 'test_config')
+            if final_filename.endswith('_config'):
+                final_filename = final_filename[:-7]  # Remove _config suffix
+            if not final_filename.endswith('.json'):
+                final_filename += '.json'
+            
+            final_file_path = os.path.join(destination_path, final_filename)
+            
+            # Handle component configuration and create single combined file
+            component_info = ""
+            files_created_list = []
+            
+            if hasattr(self, 'component_config_data') and self.component_config_data:
+                # Create flat configuration structure matching the desired format
+                flat_config = {
+                    'origin': self.component_config_data.get('origin', ''),
+                    'path': self.component_config_data.get('path', '/'),
+                    'url': self.component_config_data.get('url', test_config['url']),
+                    'duration': test_config['duration'],
+                    'created_at': test_config['created_at'],
+                    'ranks': self.component_config_data.get('ranks', {})
+                }
+                
+                # Save the flat configuration structure
+                with open(final_file_path, 'w', encoding='utf-8') as f:
+                    json.dump(flat_config, f, indent=2, ensure_ascii=False)
+                
+                print(f"💾 Complete test configuration saved to: {final_file_path}")
+                files_created_list.append(f"{final_filename} (Complete Test Configuration)")
+                
+                component_ranks = len(self.component_config_data.get('ranks', {}))
+                
+            else:
+                # Save basic config only if no component data - use flat structure
+                basic_config = {
+                    'origin': '',
+                    'path': '/',
+                    'url': test_config['url'],
+                    'duration': test_config['duration'],
+                    'created_at': test_config['created_at'],
+                    'ranks': {}
+                }
+                
+                with open(final_file_path, 'w', encoding='utf-8') as f:
+                    json.dump(basic_config, f, indent=2, ensure_ascii=False)
+                
+                print(f"� Basic test configuration saved to: {final_file_path}")
+                files_created_list.append(f"{final_filename} (Basic Configuration)")
+                component_info = "\n\nComponent Configuration: ⚠️ Not configured yet\n💡 Configure components for enhanced testing"
+            
+            # Show success message with the single created file
+            files_created = "\n".join([f"• {file_info}" for file_info in files_created_list])
+            
+            messagebox.showinfo("Configuration Saved Successfully!", 
+                              f"Test configuration saved to:\n{destination_path}\n\n"
+                              f"File created:\n{files_created}"
+                              f"\n\nTest Details:\n• Filename: {test_config.get('filename', 'N/A')}\n• URL: {test_config.get('url', 'N/A')}\n• Duration: {test_config.get('duration', 'N/A')} minutes"
+                              f"{component_info}")
+            
+            # Store for later use
+            stored_data = {
+                'test_config': test_config,
+                'component_config': self.component_config_data if hasattr(self, 'component_config_data') else None,
+                'saved_to': destination_path,
+                'config_file': final_file_path,
+                'files_created': files_created_list,
+                'has_combined_config': hasattr(self, 'component_config_data') and self.component_config_data is not None
+            }
+            
+            self.current_test_data = stored_data
+            
+            print("✅ Test configuration saved successfully!")
+            
+            # Navigate back to main menu after successful save
+            self.show_title_screen()
+            
+        except Exception as e:
+            messagebox.showerror("Save Error", f"Failed to save configuration files:\n\n{str(e)}")
+            print(f"❌ Save error: {e}")
     
     def validate_duration_input(self, event):
         """Validate that duration input contains only digits."""

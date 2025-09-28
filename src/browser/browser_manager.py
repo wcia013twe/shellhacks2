@@ -76,98 +76,8 @@ class BrowserManager:
         return chrome_options
     
     def _inject_sidebar_overlay(self):
-        """Inject a sidebar overlay into any website for navigation."""
-        sidebar_script = """
-        // Remove any existing sidebar
-        const existingSidebar = document.getElementById('selenium-sidebar');
-        if (existingSidebar) existingSidebar.remove();
-        
-        // Create sidebar overlay
-        const sidebar = document.createElement('div');
-        sidebar.id = 'selenium-sidebar';
-        sidebar.innerHTML = `
-            <div style="
-                position: fixed; top: 0; left: -280px; width: 280px; height: 100vh;
-                background: linear-gradient(180deg, #2d3748 0%, #1a202c 100%);
-                color: #e2e8f0; z-index: 999999; transition: left 0.3s ease;
-                border-right: 2px solid #4a5568; font-family: Arial, sans-serif;
-                display: flex; flex-direction: column;
-            " id="sidebar-panel">
-                <div style="padding: 15px; background: rgba(255,255,255,0.1); border-bottom: 1px solid #4a5568;">
-                    <h3 style="margin: 0; font-size: 18px;">🌐 Quick Nav</h3>
-                </div>
-                <div style="flex: 1; overflow-y: auto; padding: 10px 0;">
-                    <a href="https://www.google.com" style="display: block; padding: 10px 15px; color: #cbd5e0; text-decoration: none; border-left: 3px solid transparent;">🔍 Google</a>
-                    <a href="https://github.com" style="display: block; padding: 10px 15px; color: #cbd5e0; text-decoration: none; border-left: 3px solid transparent;">🐙 GitHub</a>
-                    <a href="https://stackoverflow.com" style="display: block; padding: 10px 15px; color: #cbd5e0; text-decoration: none; border-left: 3px solid transparent;">💻 Stack Overflow</a>
-                    <a href="https://news.ycombinator.com" style="display: block; padding: 10px 15px; color: #cbd5e0; text-decoration: none; border-left: 3px solid transparent;">📰 Hacker News</a>
-                    <a href="https://www.reddit.com" style="display: block; padding: 10px 15px; color: #cbd5e0; text-decoration: none; border-left: 3px solid transparent;">🤖 Reddit</a>
-                    <a href="https://www.wikipedia.org" style="display: block; padding: 10px 15px; color: #cbd5e0; text-decoration: none; border-left: 3px solid transparent;">📚 Wikipedia</a>
-                    <a href="https://www.youtube.com" style="display: block; padding: 10px 15px; color: #cbd5e0; text-decoration: none; border-left: 3px solid transparent;">🎥 YouTube</a>
-                </div>
-                <div style="padding: 10px 15px; border-top: 1px solid #4a5568; font-size: 12px; opacity: 0.8;">
-                    <div>✅ No iframe restrictions!</div>
-                </div>
-            </div>
-            
-            <!-- Toggle Button -->
-            <button style="
-                position: fixed; top: 20px; left: 20px; z-index: 1000000;
-                background: #4299e1; color: white; border: none; border-radius: 50%;
-                width: 50px; height: 50px; cursor: pointer; font-size: 20px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.3); transition: all 0.2s ease;
-            " onclick="toggleSidebar()" id="sidebar-toggle">☰</button>
-        `;
-        
-        // Add CSS for hover effects
-        const style = document.createElement('style');
-        style.textContent = `
-            #selenium-sidebar a:hover {
-                background: rgba(255,255,255,0.1) !important;
-                border-left-color: #4299e1 !important;
-            }
-            #sidebar-toggle:hover {
-                background: #3182ce !important;
-                transform: scale(1.05);
-            }
-        `;
-        document.head.appendChild(style);
-        
-        // Add sidebar to page
-        document.body.appendChild(sidebar);
-        
-        // Toggle function
-        window.toggleSidebar = function() {
-            const panel = document.getElementById('sidebar-panel');
-            const toggle = document.getElementById('sidebar-toggle');
-            const isOpen = panel.style.left === '0px';
-            
-            if (isOpen) {
-                panel.style.left = '-280px';
-                toggle.textContent = '☰';
-                toggle.style.left = '20px';
-            } else {
-                panel.style.left = '0px';
-                toggle.textContent = '✖';
-                toggle.style.left = '300px';
-            }
-        };
-        
-        // Handle navigation clicks
-        document.querySelectorAll('#selenium-sidebar a').forEach(link => {
-            link.addEventListener('click', function(e) {
-                e.preventDefault();
-                window.location.href = this.href;
-            });
-        });
-        
-        console.log('✅ Selenium sidebar injected successfully!');
-        """
-        
-        try:
-            self.driver.execute_script(sidebar_script)
-        except Exception as e:
-            print(f"⚠️ Could not inject sidebar: {e}")
+        """Sidebar overlay disabled - clean browser experience."""
+        pass  # No sidebar injection for clean browser experience
     
     def launch_browser(self, url, main_window=None, on_ready_callback=None):
         """
@@ -219,7 +129,7 @@ class BrowserManager:
             
             print("✅ Browser launched successfully!")
             print("💡 Features:")
-            print("   • Click the ☰ button (top-left) to toggle sidebar")
+            print("   • Clean browsing experience without overlays")
             print("   • All websites work (no iframe restrictions!)")
             print("   • Full JavaScript injection support")
             
@@ -281,11 +191,10 @@ class BrowserManager:
                 
                 self.driver.get(validated_url)
                 
-                # Wait for load and re-inject sidebar
+                # Wait for page load
                 WebDriverWait(self.driver, 10).until(
                     EC.presence_of_element_located((By.TAG_NAME, "body"))
                 )
-                self._inject_sidebar_overlay()
                 return True
                 
             except Exception as e:
