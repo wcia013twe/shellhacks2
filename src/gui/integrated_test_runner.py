@@ -11,21 +11,31 @@ import threading
 import sys
 import os
 
-# Add src to path for imports
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+# Add src and project root to path
+current_dir = os.path.dirname(__file__)
+src_dir = os.path.dirname(current_dir)
+project_root = os.path.dirname(src_dir)
 
-from timer import BrowserTimer
-from browser import BrowserManager
+sys.path.insert(0, src_dir)
+sys.path.insert(0, project_root)
+
+from src.timer import BrowserTimer
+from src.browser import BrowserManager
 
 
 class IntegratedTestManager:
-    """Integration class that bridges new UI with existing browser functionality."""
+    """Integration class that bridges UI with browser functionality."""
     
-    def __init__(self, test_data):
-        """Initialize with test configuration data."""
+    def __init__(self, test_data, eye_tracker=None):
+        """Initialize with test configuration data and optional eye tracker."""
         self.test_data = test_data
         self.timer_manager = BrowserTimer()
         self.browser_manager = BrowserManager()
+        self.eye_tracker = eye_tracker
+        
+        # Integrate eye tracker with browser if provided
+        if self.eye_tracker:
+            self.browser_manager.integrate_eye_tracker(self.eye_tracker)
         
     def start_test_with_browser(self, completion_callback=None):
         """Start the test using existing browser and timer functionality."""
@@ -37,7 +47,12 @@ class IntegratedTestManager:
             # Parse duration (handle formats like "2min", "2 minutes", "2")
             try:
                 if 'min' in duration_str.lower():
-                    duration = float(duration_str.lower().replace('min', '').replace('utes', '').strip())
+                    duration = float(
+                        duration_str.lower()
+                        .replace('min', '')
+                        .replace('utes', '')
+                        .strip()
+                    )
                 else:
                     duration = float(duration_str)
             except:
@@ -49,9 +64,20 @@ class IntegratedTestManager:
             
             def start_timer_when_ready():
                 """Callback executed when browser is ready."""
+                # Integrate eye tracker with browser for continuous gaze data
+                if self.eye_tracker and self.eye_tracker.is_calibrated:
+                    print("👁️ Integrating eye tracker with browser...")
+                    self.browser_manager.integrate_eye_tracker(self.eye_tracker)
+                else:
+                    print("⚠️ Eye tracker not calibrated - no gaze data will be recorded")
+                
                 if duration > 0:
                     print(f"🕐 Starting {duration} minute timer...")
-                    self.timer_manager.start_timer(duration, completion_callback)
+                    self.timer_manager.start_timer(
+                        duration,
+                        None,
+                        on_time_elapsed=lambda: self.browser_manager.finalize_gaze_play()
+                    )
                 else:
                     print("✅ Browser ready! No time limit set.")
             
@@ -93,7 +119,8 @@ class IntegratedTestManager:
 
 
 class ModifiedMainWindow:
-    """Modified version of the original main window that can be called from the new UI."""
+    """Modified version of the original main window that can be called
+    from the new UI."""
     
     def __init__(self, test_data=None):
         """Initialize with optional test data."""
@@ -125,7 +152,9 @@ class ModifiedMainWindow:
         
         if self.test_data:
             # Show test information if data provided
-            info_frame = ttk.LabelFrame(main_frame, text="Test Configuration", padding=15)
+            info_frame = ttk.LabelFrame(
+                main_frame, text="Test Configuration", padding=15
+            )
             info_frame.pack(fill='x', pady=(0, 20))
             
             info_text = f"""Test Name: {self.test_data.get('usershown', 'N/A')}
@@ -143,7 +172,9 @@ Description: {self.test_data.get('description', 'N/A')[:100]}..."""
             )
             start_configured_btn.pack(pady=10)
             
-            ttk.Separator(main_frame, orient='horizontal').pack(fill='x', pady=20)
+            ttk.Separator(main_frame, orient='horizontal').pack(
+                fill='x', pady=20
+            )
         
         # Original functionality
         # URL input section
@@ -152,7 +183,9 @@ Description: {self.test_data.get('description', 'N/A')[:100]}..."""
         ttk.Label(url_frame, text="Enter URL:").pack(side='left')
         self.url_entry = ttk.Entry(url_frame, width=40)
         self.url_entry.pack(side='left', fill='x', expand=True, padx=(5, 0))
-        self.url_entry.insert(0, self.test_data.get('url', 'https://google.com'))
+        self.url_entry.insert(
+            0, self.test_data.get('url', 'https://google.com')
+        )
         
         # Time limit input section
         time_frame = ttk.Frame(main_frame)
@@ -164,7 +197,13 @@ Description: {self.test_data.get('description', 'N/A')[:100]}..."""
         # Set default time from test data or use 2
         default_duration = self.test_data.get('duration', '2')
         if 'min' in str(default_duration).lower():
-            default_duration = str(default_duration).lower().replace('min', '').replace('utes', '').strip()
+            default_duration = (
+                str(default_duration)
+                .lower()
+                .replace('min', '')
+                .replace('utes', '')
+                .strip()
+            )
         self.time_entry.insert(0, default_duration)
         
         ttk.Label(time_frame, text="(0 = no limit)", foreground='gray').pack(side='left')
@@ -253,7 +292,11 @@ Description: {self.test_data.get('description', 'N/A')[:100]}..."""
             def start_timer_when_ready():
                 if time_limit > 0:
                     print(f"🕐 Starting {time_limit} minute timer...")
-                    self.timer_manager.start_timer(time_limit, None)
+                    self.timer_manager.start_timer(
+                        time_limit,
+                        None,
+                        on_time_elapsed=lambda: self.browser_manager.finalize_gaze_play()
+                    )
                     self.status_var.set(f"Browser ready! Timer: {time_limit} min")
                 else:
                     print("✅ Browser ready! No time limit set.")

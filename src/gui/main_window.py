@@ -122,7 +122,11 @@ class SimpleBrowserLauncher:
             def start_timer_when_ready():
                 if time_limit > 0:
                     print(f"🕐 Starting {time_limit} minute timer now that browser is ready...")
-                    self.timer_manager.start_timer(time_limit, None)
+                    self.timer_manager.start_timer(
+                        time_limit,
+                        None,
+                        on_time_elapsed=lambda: self.browser_manager.finalize_gaze_play()
+                    )
                     self.status_var.set(f"Browser ready! Timer: {time_limit} min")
                 else:
                     print("✅ Browser ready! No time limit set.")

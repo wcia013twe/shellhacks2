@@ -19,6 +19,8 @@ import time
 import tempfile
 import os
 
+from .play_script import PLAY_SCRIPT
+
 
 class BrowserManager:
     """Manages Selenium WebDriver browser with JavaScript injection capabilities."""
@@ -29,6 +31,7 @@ class BrowserManager:
         self.eye_tracker = None
         self.tracking_thread = None
         self.tracking_active = False
+        self.gaze_play_injected = False
         
     def validate_url(self, url):
         """Validate and normalize the URL."""
@@ -114,6 +117,7 @@ class BrowserManager:
             # Navigate to URL
             print(f"🌐 Loading: {validated_url}")
             self.driver.get(validated_url)
+            self.gaze_play_injected = False
             
             # Wait for page to load
             WebDriverWait(self.driver, 10).until(
@@ -132,6 +136,8 @@ class BrowserManager:
             print("   • Clean browsing experience without overlays")
             print("   • All websites work (no iframe restrictions!)")
             print("   • Full JavaScript injection support")
+            self._ensure_gaze_play_bootstrap()
+
             
             # Call ready callback now that browser is fully loaded
             if on_ready_callback:
@@ -153,18 +159,22 @@ class BrowserManager:
             return False, error_msg
     
     def _start_browser_monitor(self, main_window):
-        """Monitor browser and handle cleanup when closed. This blocks until browser closes."""
+        """Monitor browser and handle cleanup when closed."""
         try:
             while self.driver:
                 # Check if browser is still open
                 try:
                     self.driver.current_url
                     time.sleep(1)
-                except:
-                    # Browser closed
+                except Exception as e:
+                    # Browser closed or connection lost
+                    if "No connection could be made" in str(e):
+                        print("🔌 Browser connection lost")
+                    else:
+                        print("👋 Browser closed by user")
                     break
-        except:
-            pass
+        except Exception as e:
+            print(f"⚠️ Browser monitor error: {e}")
         finally:
             # Cleanup and restore main window
             self.close_browser()
@@ -177,7 +187,13 @@ class BrowserManager:
             try:
                 return self.driver.execute_script(script)
             except Exception as e:
-                print(f"⚠️ JavaScript injection failed: {e}")
+                # Check if browser session is lost
+                if "No connection could be made" in str(e) or "Connection refused" in str(e):
+                    print("🔌 Browser session lost - stopping gaze tracking")
+                    self.tracking_active = False
+                    self.driver = None
+                else:
+                    print(f"⚠️ JavaScript injection failed: {e}")
                 return None
         return None
     
@@ -190,11 +206,13 @@ class BrowserManager:
                     return False
                 
                 self.driver.get(validated_url)
+                self.gaze_play_injected = False
                 
                 # Wait for page load
                 WebDriverWait(self.driver, 10).until(
                     EC.presence_of_element_located((By.TAG_NAME, "body"))
                 )
+                self._ensure_gaze_play_bootstrap()
                 return True
                 
             except Exception as e:
@@ -248,21 +266,72 @@ class BrowserManager:
         # Start gaze tracking thread
         def gaze_loop():
             self.tracking_active = True
+            self._ensure_gaze_play_bootstrap()
+            last_record_ts = 0.0
+            consecutive_errors = 0
+            max_consecutive_errors = 5
+            
             while self.tracking_active and self.driver:
                 try:
+                    # Check if driver is still valid
+                    if not self.driver:
+                        print("🔌 Browser driver lost - stopping gaze tracking")
+                        break
+                        
                     gaze = self.eye_tracker.get_gaze()
-                    if gaze and gaze['position']:
-                        x, y = gaze['position']
-                        fixating = gaze.get('fixation', False)
-                        
-                        script = f"if(window.gazeOverlay) window.gazeOverlay.update({x}, {y}, {str(fixating).lower()});"
-                        self.inject_javascript(script)
-                        
+                    if gaze and gaze.get('position') is not None:
+                        position = gaze['position']
+                        # Handle numpy array or tuple/list positions safely
+                        if hasattr(position, '__len__') and len(position) >= 2:
+                            try:
+                                x, y = float(position[0]), float(position[1])
+                                # Validate coordinates are reasonable
+                                if 0 <= x <= 10000 and 0 <= y <= 10000:
+                                    fixating = gaze.get('fixation', False)
+
+                                    overlay_script = (
+                                        f"if(window.gazeOverlay) "
+                                        f"window.gazeOverlay.update({x}, {y}, "
+                                        f"{str(fixating).lower()});"
+                                    )
+                                    self.inject_javascript(overlay_script)
+
+                                    now = time.time()
+                                    if (self.gaze_play_injected and 
+                                        now - last_record_ts >= 1.0):
+                                        record_js = (
+                                            "if(window.__gazePlay?.record){"
+                                            f"window.__gazePlay.record("
+                                            f"{x:.2f}, {y:.2f}, 'device');"
+                                            "}"
+                                        )
+                                        self.inject_javascript(record_js)
+                                        last_record_ts = now
+                                        
+                                # Reset error counter on success
+                                consecutive_errors = 0
+                                        
+                            except (ValueError, TypeError, IndexError):
+                                # Skip invalid position data
+                                pass
+
                     time.sleep(0.033)  # ~30 FPS
+                    
                 except Exception as e:
-                    print(f"⚠️ Gaze tracking error: {e}")
+                    consecutive_errors += 1
+                    print(f"⚠️ Gaze tracking error ({consecutive_errors}): {e}")
+                    
+                    # Stop tracking if too many consecutive errors
+                    if consecutive_errors >= max_consecutive_errors:
+                        print(f"🛑 Too many consecutive errors ({consecutive_errors}), "
+                              f"stopping gaze tracking")
+                        self.tracking_active = False
+                        break
+                        
                     time.sleep(0.1)
-        
+            
+            print("👁️ Gaze tracking loop ended")
+
         self.tracking_thread = threading.Thread(target=gaze_loop, daemon=True)
         self.tracking_thread.start()
         print("✅ Eye tracker integrated!")
@@ -278,8 +347,52 @@ class BrowserManager:
                 pass
             self.driver = None
         
+        self.gaze_play_injected = False
         print("👋 Browser closed")
     
     def get_webview_window(self):
         """Get the current driver (compatibility method)."""
         return self.driver
+    
+    def is_browser_alive(self):
+        """Check if the browser session is still active."""
+        if not self.driver:
+            return False
+        try:
+            self.driver.current_url
+            return True
+        except Exception:
+            return False
+
+    def _ensure_gaze_play_bootstrap(self):
+        """Inject the gaze play JavaScript runtime if it isn't already available."""
+        if not self.driver or self.gaze_play_injected:
+            return
+
+        try:
+            self.driver.execute_script(PLAY_SCRIPT)
+            self.gaze_play_injected = True
+            print("✔ __gazePlay runtime loaded")
+        except Exception as e:
+            print(f"⚠️ Could not inject __gazePlay runtime: {e}")
+
+    def finalize_gaze_play(self):
+        """Flush the gaze play counters and log the selector summaries."""
+        if not self.driver:
+            return None
+
+        try:
+            script = (
+                "if (window.__gazePlay && typeof window.__gazePlay.end === 'function') {"
+                "const out = window.__gazePlay.end();"
+                "if (out) {"
+                "console.log(out.ranksBySelector, out.occurrencesBySelector);"
+                "return out;"
+                "}"
+                "}"
+                "return null;"
+            )
+            return self.inject_javascript(script)
+        except Exception as e:
+            print(f"⚠️ Failed to finalize gaze play data: {e}")
+            return None

@@ -29,6 +29,9 @@ class TestUIManager:
         # Current test data (will be populated from forms)
         self.current_test_data = {}
         
+        # Initialize shared eye tracker instance (will be created when needed)
+        self.eye_tracker = None
+        
         # Setup trackpad gesture support
         self.setup_trackpad_gestures()
         
@@ -626,420 +629,274 @@ class TestUIManager:
         time.sleep(2)
         
         element_ranking_script = r"""
-        // Element Ranking Script for Eye Tracking Component Configuration
-        (() => {
-          // ===== internal class prefix & helpers =====
-          const INTERNAL_PREFIX = "__gaze_";
-          const CLASS_PENDING = `${INTERNAL_PREFIX}glowP`;   // blue
-          const CLASS_RANKED  = `${INTERNAL_PREFIX}glowG`;   // green
+            // Element Ranking Script for Eye Tracking Component Configuration
+            (() => {
+            // ===== internal class prefix & helpers =====
+            const INTERNAL_PREFIX = "__gaze_";
+            const CLASS_PENDING = `${INTERNAL_PREFIX}glowP`;   // blue
+            const CLASS_RANKED  = `${INTERNAL_PREFIX}glowG`;   // green
 
-          const isInternalClass = (c) => c && c.startsWith(INTERNAL_PREFIX);
-          const hasDigits = (s) => /\d/.test(s);
-          const stableClass = (c) => c && c.length <= 32 && !hasDigits(c) && !isInternalClass(c);
-          const unique = (sel) => { try { return document.querySelectorAll(sel).length === 1; } catch { return false; } };
+            const isInternalClass = (c) => c && c.startsWith(INTERNAL_PREFIX);
+            const hasDigits = (s) => /\d/.test(s);
+            const stableClass = (c) => c && c.length <= 32 && !hasDigits(c) && !isInternalClass(c);
+            const unique = (sel) => { try { return document.querySelectorAll(sel).length === 1; } catch { return false; } };
 
-          const attrCandidates = (el) => {
-            const out = [];
-            for (const a of el.attributes || []) {
-              const k = a.name;
-              if (k.startsWith("data-") || k === "aria-label" || k === "name" || k === "role") {
-                out.push(`[${CSS.escape ? CSS.escape(k) : k}="${a.value}"]`);
-              }
-            }
-            return out;
-          };
+            const attrCandidates = (el) => {
+                const out = [];
+                for (const a of el.attributes || []) {
+                const k = a.name;
+                if (k.startsWith("data-") || k === "aria-label" || k === "name" || k === "role") {
+                    out.push(`[${CSS.escape ? CSS.escape(k) : k}="${a.value}"]`);
+                }
+                }
+                return out;
+            };
 
-          // Temporarily remove ALL internal classes from a node, run fn(), then restore
-          const withoutInternalClasses = (el, fn) => {
-            if (!(el instanceof Element)) return fn();
-            const removed = [];
-            el.classList.forEach((c) => { if (isInternalClass(c)) { el.classList.remove(c); removed.push(c); } });
-            try { return fn(); } finally { removed.forEach((c) => el.classList.add(c)); }
-          };
+            // Temporarily remove ALL internal classes from a node, run fn(), then restore
+            const withoutInternalClasses = (el, fn) => {
+                if (!(el instanceof Element)) return fn();
+                const removed = [];
+                el.classList.forEach((c) => { if (isInternalClass(c)) { el.classList.remove(c); removed.push(c); } });
+                try { return fn(); } finally { removed.forEach((c) => el.classList.add(c)); }
+            };
 
-          // Build a unique, robust selector (no html/body; ignore our glow classes)
-          const selectorFor = (el) => withoutInternalClasses(el, () => {
-            if (!(el instanceof Element)) return null;
+            // Build a unique, robust selector (no html/body; ignore our glow classes)
+            const selectorFor = (el) => withoutInternalClasses(el, () => {
+                if (!(el instanceof Element)) return null;
 
-            // 1) Unique ID
-            if (el.id && unique(`#${CSS.escape ? CSS.escape(el.id) : el.id}`)) {
-              return `#${CSS.escape ? CSS.escape(el.id) : el.id}`;
-            }
+                // 1) Unique ID
+                if (el.id && unique(`#${CSS.escape ? CSS.escape(el.id) : el.id}`)) {
+                return `#${CSS.escape ? CSS.escape(el.id) : el.id}`;
+                }
 
-            // 2) Stable attributes
-            for (const a of attrCandidates(el)) {
-              const sel = `${el.tagName.toLowerCase()}${a}`;
-              if (unique(sel)) return sel;
-            }
+                // 2) Stable attributes
+                for (const a of attrCandidates(el)) {
+                const sel = `${el.tagName.toLowerCase()}${a}`;
+                if (unique(sel)) return sel;
+                }
 
-            // 3) Tag + stable classes (<=2)
-            const classes = [...(el.classList || [])].filter(stableClass).slice(0, 2);
-            if (classes.length) {
-              const sel = `${el.tagName.toLowerCase()}` + classes.map(c => `.${CSS.escape ? CSS.escape(c) : c}`).join("");
-              if (unique(sel)) return sel;
-            }
+                // 3) Tag + stable classes (<=2)
+                const classes = [...(el.classList || [])].filter(stableClass).slice(0, 2);
+                if (classes.length) {
+                const sel = `${el.tagName.toLowerCase()}` + classes.map(c => `.${CSS.escape ? CSS.escape(c) : c}`).join("");
+                if (unique(sel)) return sel;
+                }
 
-            // 4) Tag:nth-of-type
-            const tag = el.tagName.toLowerCase();
-            let sibIndex = 1, sib = el;
-            while ((sib = sib.previousElementSibling)) if (sib.tagName === el.tagName) sibIndex++;
-            let base = `${tag}:nth-of-type(${sibIndex})`;
-            if (unique(base)) return base;
+                // 4) Tag:nth-of-type
+                const tag = el.tagName.toLowerCase();
+                let sibIndex = 1, sib = el;
+                while ((sib = sib.previousElementSibling)) if (sib.tagName === el.tagName) sibIndex++;
+                let base = `${tag}:nth-of-type(${sibIndex})`;
+                if (unique(base)) return base;
 
-            // 5) Minimal parent chain (stop at body; don't include it)
-            const cleanParentSel = (p) => withoutInternalClasses(p, () => {
-              if (p.id && unique(`#${CSS.escape ? CSS.escape(p.id) : p.id}`)) {
-                return `#${CSS.escape ? CSS.escape(p.id) : p.id}`;
-              }
-              for (const a of attrCandidates(p)) {
-                const s = `${p.tagName.toLowerCase()}${a}`;
-                if (unique(s)) return s;
-              }
-              const pcs = [...(p.classList || [])].filter(stableClass).slice(0,2);
-              if (pcs.length) return p.tagName.toLowerCase() + pcs.map(c=>`.`+(CSS.escape?CSS.escape(c):c)).join("");
-              let n=1, x=p; while ((x = x.previousElementSibling)) if (x.tagName===p.tagName) n++;
-              return `${p.tagName.toLowerCase()}:nth-of-type(${n})`;
+                // 5) Minimal parent chain (stop at body; don’t include it)
+                const cleanParentSel = (p) => withoutInternalClasses(p, () => {
+                if (p.id && unique(`#${CSS.escape ? CSS.escape(p.id) : p.id}`)) {
+                    return `#${CSS.escape ? CSS.escape(p.id) : p.id}`;
+                }
+                for (const a of attrCandidates(p)) {
+                    const s = `${p.tagName.toLowerCase()}${a}`;
+                    if (unique(s)) return s;
+                }
+                const pcs = [...(p.classList || [])].filter(stableClass).slice(0,2);
+                if (pcs.length) return p.tagName.toLowerCase() + pcs.map(c=>`.`+(CSS.escape?CSS.escape(c):c)).join("");
+                let n=1, x=p; while ((x = x.previousElementSibling)) if (x.tagName===p.tagName) n++;
+                return `${p.tagName.toLowerCase()}:nth-of-type(${n})`;
+                });
+
+                const chain = [base];
+                let p = el.parentElement;
+                while (p && p !== document.body) {
+                const pSel = cleanParentSel(p);
+                const candidate = `${pSel} > ${chain.join(" > ")}`;
+                if (unique(candidate)) return candidate;
+                chain.unshift(pSel);
+                p = p.parentElement;
+                }
+                return chain.join(" > ");
             });
 
-            const chain = [base];
-            let p = el.parentElement;
-            while (p && p !== document.body) {
-              const pSel = cleanParentSel(p);
-              const candidate = `${pSel} > ${chain.join(" > ")}`;
-              if (unique(candidate)) return candidate;
-              chain.unshift(pSel);
-              p = p.parentElement;
-            }
-            return chain.join(" > ");
-          });
-
-          // ===== styles =====
-          const ensureStyle = () => {
-            if (document.getElementById("__gazeSetupMulti")) return;
-            const s = document.createElement("style");
-            s.id = "__gazeSetupMulti";
-            s.textContent = `
-              .${CLASS_PENDING}{
-                outline:4px solid #ff6b00!important; outline-offset:3px!important;
-                box-shadow:0 0 20px #ff6b00, 0 0 40px rgba(255,107,0,.8), inset 0 0 15px rgba(255,107,0,.2)!important;
-                border-radius:8px!important; transition:all .2s ease;
-                background:rgba(255,107,0,.08)!important; animation:pendingPulse 1.5s infinite;
-              }
-              @keyframes pendingPulse {
-                0%, 100% { box-shadow:0 0 20px #ff6b00, 0 0 40px rgba(255,107,0,.8), inset 0 0 15px rgba(255,107,0,.2); }
-                50% { box-shadow:0 0 30px #ff6b00, 0 0 60px rgba(255,107,0,1), inset 0 0 25px rgba(255,107,0,.3); }
-              }
-              .${CLASS_RANKED}{
-                outline:4px solid #00ff00!important; outline-offset:3px!important;
-                box-shadow:0 0 20px #00ff00, 0 0 40px rgba(0,255,0,.8), inset 0 0 15px rgba(0,255,0,.2)!important;
-                border-radius:8px!important; transition:all .2s ease;
-                background:rgba(0,255,0,.05)!important;
-              }
-              .${INTERNAL_PREFIX}toast{
-                position:fixed; z-index:2147483647; left:50%; top:12px; transform:translateX(-50%);
-                background:rgba(20,22,26,.92); color:#e6f0ff; padding:8px 12px; border-radius:8px;
-                font:13px/1.45 system-ui; box-shadow:0 6px 18px rgba(0,0,0,.35); pointer-events:none
-              }
-              .${INTERNAL_PREFIX}hud{
-                position:fixed; z-index:2147483647; background:#0b1220; color:#e6f0ff; padding:6px;
-                border-radius:10px; box-shadow:0 10px 30px rgba(0,0,0,.45); display:flex; gap:6px; align-items:center;
-              }
-              .${INTERNAL_PREFIX}btn{
-                min-width:28px; min-height:28px; border-radius:8px; border:1px solid #2b3652;
-                background:#121b2f; color:#cfe1ff; cursor:pointer; font:600 13px/1 system-ui
-              }
-              .${INTERNAL_PREFIX}btn:hover{ background:#1a2540 }
-              .${INTERNAL_PREFIX}small{ opacity:.8; font:12px/1.2 system-ui; margin-left:6px }
-              .${INTERNAL_PREFIX}instructions{
-                position:fixed; z-index:2147483647; top:60px; left:50%; transform:translateX(-50%);
-                background:rgba(20,22,26,.95); color:#e6f0ff; padding:15px 20px; border-radius:12px;
-                font:14px/1.4 system-ui; box-shadow:0 8px 25px rgba(0,0,0,.4); max-width:500px;
-              }
-            `;
-            document.head.appendChild(s);
-          };
-
-          const toast = (msg, ms=1200) => {
-            const el = document.createElement("div");
-            el.className = `${INTERNAL_PREFIX}toast`; el.textContent = msg;
-            document.documentElement.appendChild(el);
-            setTimeout(() => el.remove(), ms);
-          };
-
-          // ===== state: many-per-rank + toggle removal =====
-          if (window.__gazeSetup?.end) window.__gazeSetup.end(true);
-          ensureStyle();
-
-          const selectedByEl = new Map();     // Element -> { rank, selector, tag }
-          const byRank = new Map();           // rank -> Set<Element>
-          let pendingEl = null;
-          let hud = null;
-          let lastProfile = null;
-          let instructionsEl = null;
-
-          // helpers for visual state
-          const markPending   = (el) => el && (el.classList.remove(CLASS_RANKED), el.classList.add(CLASS_PENDING));
-          const unmarkPending = (el) => el && el.classList.remove(CLASS_PENDING);
-          const markRanked    = (el) => el && (el.classList.remove(CLASS_PENDING), el.classList.add(CLASS_RANKED));
-          const unmarkRanked  = (el) => el && el.classList.remove(CLASS_RANKED);
-
-          const hideHUD = () => { hud?.remove(); hud = null; };
-          const showHUD = (x, y, onPick) => {
-            hideHUD();
-            hud = document.createElement("div"); hud.className=`${INTERNAL_PREFIX}hud`; hud.tabIndex=-1;
-            const mk = (n)=>{ const b=document.createElement("button"); b.className=`${INTERNAL_PREFIX}btn`; b.textContent=n; b.onclick=(e)=>{e.stopPropagation(); onPick(n); hideHUD();}; return b; };
-            for(let i=1;i<=5;i++) hud.appendChild(mk(i));
-            const tip=document.createElement("span"); tip.className=`${INTERNAL_PREFIX}small`; tip.textContent="1–5 to rank • Esc to finish"; hud.appendChild(tip);
-            const pad=8, w=220, h=40, left=Math.min(Math.max(x-w/2,pad), innerWidth-w-pad), top=Math.min(Math.max(y+12,pad), innerHeight-h-pad);
-            Object.assign(hud.style,{left:left+"px", top:top+"px", position:"fixed"}); document.documentElement.appendChild(hud); hud.focus({preventScroll:true});
-          };
-
-          const showInstructions = () => {
-            if (instructionsEl) return;
-            instructionsEl = document.createElement("div");
-            instructionsEl.className = `${INTERNAL_PREFIX}instructions`;
-            instructionsEl.style.cssText = `
-              position: fixed; z-index: 2147483647; top: 80px; left: 50%; transform: translateX(-50%);
-              background: #0b1220; color: #e6f0ff; padding: 20px; border-radius: 12px;
-              font: 14px/1.4 system-ui; box-shadow: 0 8px 25px rgba(0,0,0,0.6); max-width: 500px;
-              border: 2px solid #1e90ff; animation: pulse 2s infinite;
-            `;
-            // Create content with close button
-            const content = document.createElement('div');
-            content.style.cssText = 'position: relative; padding-right: 30px;';
-            content.textContent = '🎯 ELEMENT RANKING ACTIVE\n\n• Alt+Click any element to select it\n• Choose importance rank 1-5 (1=most important)\n• Alt+Click again on ranked elements to remove\n\nPress ESC when finished to save configuration';
-            content.style.whiteSpace = 'pre-line';
-            content.style.fontSize = '14px';
-            content.style.lineHeight = '1.6';
-            
-            // Create close button
-            const closeBtn = document.createElement('button');
-            closeBtn.textContent = '×';
-            closeBtn.style.cssText = `
-              position: absolute; top: 5px; right: 5px; width: 25px; height: 25px;
-              background: #ff4444; color: white; border: none; border-radius: 50%;
-              cursor: pointer; font-size: 18px; font-weight: bold;
-              display: flex; align-items: center; justify-content: center;
-            `;
-            closeBtn.onclick = () => {
-              if (instructionsEl) {
-                instructionsEl.remove();
-                instructionsEl = null;
-              }
-            };
-            
-            instructionsEl.appendChild(content);
-            instructionsEl.appendChild(closeBtn);
-            
-            // Add pulse animation
-            const style = document.createElement('style');
-            style.textContent = `
-              @keyframes pulse {
-                0%, 100% { box-shadow: 0 8px 25px rgba(0,0,0,0.6), 0 0 0 0 rgba(30,144,255,0.4); }
-                50% { box-shadow: 0 8px 25px rgba(0,0,0,0.6), 0 0 0 10px rgba(30,144,255,0); }
-              }
-            `;
-            document.head.appendChild(style);
-            
-            document.documentElement.appendChild(instructionsEl);
-            
-            // Auto-hide instructions after 15 seconds instead of 8
-            setTimeout(() => {
-              if (instructionsEl) {
-                instructionsEl.style.opacity = '0';
-                instructionsEl.style.transition = 'opacity 0.5s';
-                setTimeout(() => instructionsEl?.remove(), 500);
-                instructionsEl = null;
-              }
-            }, 15000);
-          };
-
-          const clearPending = () => {
-            if (pendingEl) unmarkPending(pendingEl);
-            pendingEl = null;
-            hideHUD();
-          };
-
-          const removeSelection = (el) => {
-            const rec = selectedByEl.get(el);
-            if (!rec) return;
-            const set = byRank.get(rec.rank);
-            if (set) set.delete(el);
-            selectedByEl.delete(el);
-            unmarkRanked(el);
-            toast(`Removed rank ${rec.rank} from <${el.tagName.toLowerCase()}>`);
-          };
-
-          const assignRank = (el, rank) => {
-            // Move between ranks if needed
-            const prev = selectedByEl.get(el);
-            if (prev) {
-              if (prev.rank === rank) { toast(`Already rank ${rank}`); clearPending(); return; }
-              const prevSet = byRank.get(prev.rank); if (prevSet) prevSet.delete(el);
-            }
-            const selector = selectorFor(el);
-            selectedByEl.set(el, { rank, selector, tag: el.tagName.toLowerCase() });
-            if (!byRank.has(rank)) byRank.set(rank, new Set());
-            byRank.get(rank).add(el);
-            markRanked(el);     // stay green after assignment
-            clearPending();
-            toast(`Assigned rank ${rank} to <${el.tagName.toLowerCase()}>`);
-          };
-
-          const onKeyDown = (e) => {
-            if (e.key === "Escape") { 
-              e.preventDefault(); 
-              end(); 
-              
-              // Signal completion to Python and attempt to close
-              console.log('ESC pressed - configuration saved, requesting browser close');
-              
-              try {
-                // Change title to signal completion
-                document.title = 'ELEMENT_RANKING_COMPLETE';
-                
-                // Simple close attempt
-                window.close();
-                console.log('Browser close attempted');
-              } catch (e1) {
-                console.log('Close failed:', e1);
-              }
-              
-              // Show console message and toast instead of alert to avoid interference
-              console.log('✅ Configuration saved successfully! Browser can be closed now.');
-              
-              // Show a toast notification instead of alert
-              const notificationToast = document.createElement('div');
-              notificationToast.style.cssText = `
-                position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-                z-index: 2147483647; background: #0b1220; color: #e6f0ff; padding: 20px 30px;
-                border-radius: 12px; font: 16px/1.4 system-ui; text-align: center;
-                box-shadow: 0 10px 40px rgba(0,0,0,0.6); border: 2px solid #00ff00;
-                max-width: 400px; animation: successFade 8s ease-out forwards;
-              `;
-              notificationToast.innerHTML = `
-                <div style="font-size: 24px; margin-bottom: 10px;">✅</div>
-                <div style="font-weight: bold; margin-bottom: 10px; color: #00ff88;">Configuration Saved Successfully!</div>
-                <div style="font-size: 14px; opacity: 0.9;">You can now close this browser window:<br>• Press Ctrl+W, or<br>• Click the X button</div>
-              `;
-              
-              // Add fade animation
-              const toastStyle = document.createElement('style');
-              toastStyle.textContent = `
-                @keyframes successFade {
-                  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
-                  10% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-                  90% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-                  100% { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
+            // ===== styles =====
+            const ensureStyle = () => {
+                if (document.getElementById("__gazeSetupMulti")) return;
+                const s = document.createElement("style");
+                s.id = "__gazeSetupMulti";
+                s.textContent = `
+                .${CLASS_PENDING}{
+                    outline:3px solid #1e90ff!important; outline-offset:2px!important;
+                    box-shadow:0 0 10px #1e90ff, 0 0 20px rgba(30,144,255,.6)!important;
+                    border-radius:6px!important; transition:box-shadow .15s
                 }
-              `;
-              document.head.appendChild(toastStyle);
-              document.body.appendChild(notificationToast);
-              
-              // Auto-remove after animation
-              setTimeout(() => {
-                notificationToast?.remove();
-                toastStyle?.remove();
-              }, 8000);
-              
-              return; 
-            }
-            const num = Number(e.key);
-            if (pendingEl && Number.isInteger(num) && num>=1 && num<=5) {
-              e.preventDefault(); assignRank(pendingEl, num);
-            }
-          };
-
-          const onPointerDown = (e) => {
-            const inHUD = e.target.closest(`.${INTERNAL_PREFIX}hud`);
-
-            // Any non-Alt click (outside HUD) clears unranked preview
-            if (!(e.altKey && e.button === 0)) {
-              if (!inHUD) clearPending();
-              return;
-            }
-
-            // Alt+Click behavior
-            e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-
-            const el = document.elementFromPoint(e.clientX, e.clientY);
-            if (!el) return;
-
-            // Toggle OFF if this exact element was already selected
-            if (selectedByEl.has(el)) { clearPending(); removeSelection(el); return; }
-
-            // New pending pick: clear prior preview, then show HUD for rank
-            clearPending();
-            pendingEl = el;
-            markPending(el);  // blue while waiting for rank
-            showHUD(e.clientX, e.clientY, (rank)=>assignRank(el, rank));
-          };
-
-          // Turn current selections into a profile object
-          const buildProfile = () => {
-            const ranks = {};
-            for (const [el, rec] of selectedByEl.entries()) {
-              const k = String(rec.rank);
-              if (!ranks[k]) ranks[k] = [];
-              // de-dup selectors in case of repeats
-              if (!ranks[k].some(x => x.selector === rec.selector)) {
-                ranks[k].push({ selector: rec.selector, tag: rec.tag });
-              }
-            }
-            return {
-              version: 1,
-              url: location.href,
-              origin: location.origin,
-              path: location.pathname,
-              saved_at: Date.now(),
-              ranks
+                .${CLASS_RANKED}{
+                    outline:3px solid #2e7d32!important; outline-offset:2px!important;
+                    box-shadow:0 0 10px #2e7d32, 0 0 20px rgba(46,125,50,.5)!important;
+                    border-radius:6px!important; transition:box-shadow .15s
+                }
+                .${INTERNAL_PREFIX}toast{
+                    position:fixed; z-index:2147483647; left:50%; top:12px; transform:translateX(-50%);
+                    background:rgba(20,22,26,.92); color:#e6f0ff; padding:8px 12px; border-radius:8px;
+                    font:13px/1.45 system-ui; box-shadow:0 6px 18px rgba(0,0,0,.35); pointer-events:none
+                }
+                .${INTERNAL_PREFIX}hud{
+                    position:fixed; z-index:2147483647; background:#0b1220; color:#e6f0ff; padding:6px;
+                    border-radius:10px; box-shadow:0 10px 30px rgba(0,0,0,.45); display:flex; gap:6px; align-items:center;
+                }
+                .${INTERNAL_PREFIX}btn{
+                    min-width:28px; min-height:28px; border-radius:8px; border:1px solid #2b3652;
+                    background:#121b2f; color:#cfe1ff; cursor:pointer; font:600 13px/1 system-ui
+                }
+                .${INTERNAL_PREFIX}btn:hover{ background:#1a2540 }
+                .${INTERNAL_PREFIX}small{ opacity:.8; font:12px/1.2 system-ui; margin-left:6px }
+                `;
+                document.head.appendChild(s);
             };
-          };
 
-          // ===== public API =====
-          const end = ({ save = true, silent = false } = {}) => {
-            removeEventListener("pointerdown", onPointerDown, true);
-            removeEventListener("keydown", onKeyDown, true);
-            clearPending(); // ensure unranked preview is gone
-            for (const el of selectedByEl.keys()) unmarkRanked(el);
+            const toast = (msg, ms=1200) => {
+                const el = document.createElement("div");
+                el.className = `${INTERNAL_PREFIX}toast`; el.textContent = msg;
+                document.documentElement.appendChild(el);
+                setTimeout(() => el.remove(), ms);
+            };
 
-            const profile = buildProfile();
-            lastProfile = profile;
+            // ===== state: many-per-rank + toggle removal =====
+            if (window.__gazeSetup?.end) window.__gazeSetup.end(true);
+            ensureStyle();
 
-            if (!silent) {
-              console.log("📁 Component configuration profile:", profile);
-              toast("Configuration saved! You can now close the browser.", 3000);
-            }
-            
-            // Store the profile for Python to retrieve
-            window.__componentConfig = profile;
-            window.__gazeSetup = undefined;
-            return profile;
-          };
+            const selectedByEl = new Map();     // Element -> { rank, selector, tag }
+            let pendingEl = null;
+            let hud = null;
 
-          const exportNow = () => {
-            const profile = buildProfile();
-            console.log("📤 Current component configuration:", JSON.stringify(profile, null, 2));
-            return profile;
-          };
+            // glow helpers
+            const markPending   = (el) => el && (el.classList.remove(CLASS_RANKED), el.classList.add(CLASS_PENDING));
+            const unmarkPending = (el) => el && el.classList.remove(CLASS_PENDING);
+            const markRanked    = (el) => el && (el.classList.remove(CLASS_PENDING), el.classList.add(CLASS_RANKED));
+            const unmarkRanked  = (el) => el && el.classList.remove(CLASS_RANKED);
 
-          addEventListener("pointerdown", onPointerDown, true); // capture
-          addEventListener("keydown", onKeyDown, true);         // capture
+            const hideHUD = () => { hud?.remove(); hud = null; };
+            const showHUD = (x, y, onPick) => {
+                hideHUD();
+                hud = document.createElement("div"); hud.className=`${INTERNAL_PREFIX}hud`; hud.tabIndex=-1;
+                const mk = (n)=>{ const b=document.createElement("button"); b.className=`${INTERNAL_PREFIX}btn`; b.textContent=n; b.onclick=(e)=>{e.stopPropagation(); onPick(n); hideHUD();}; return b; };
+                for(let i=1;i<=5;i++) hud.appendChild(mk(i));
+                const tip=document.createElement("span"); tip.className=`${INTERNAL_PREFIX}small`; tip.textContent="1–5 to rank • Esc to finish"; hud.appendChild(tip);
+                const pad=8, w=220, h=40, left=Math.min(Math.max(x-w/2,pad), innerWidth-w-pad), top=Math.min(Math.max(y+12,pad), innerHeight-h-pad);
+                Object.assign(hud.style,{left:left+"px", top:top+"px", position:"fixed"}); document.documentElement.appendChild(hud); hud.focus({preventScroll:true});
+            };
 
-          window.__gazeSetup = {
-            end,                 // end({save=true, silent=false}) → returns profile JSON
-            export: exportNow,   // returns profile JSON without ending
-            lastProfile: () => lastProfile
-          };
+            const clearPending = () => { if (pendingEl) unmarkPending(pendingEl); pendingEl = null; hideHUD(); };
 
-          // Show instructions
-          showInstructions();
-          
-          // Banner removed per user request
-          
-          console.log("🟦 Element ranking ready: Alt+Click elements, assign ranks 1-5 (1=highest importance), Esc to finish");
-          toast("🎯 Element ranking system is now active! Alt+Click any element to start.", 6000);
-        })();
+            const removeSelection = (el) => {
+                const rec = selectedByEl.get(el);
+                if (!rec) return;
+                selectedByEl.delete(el);
+                unmarkRanked(el);
+                toast(`Removed rank ${rec.rank} from <${el.tagName.toLowerCase()}>`);
+            };
+
+            const assignRank = (el, rank) => {
+                const prev = selectedByEl.get(el);
+                if (prev) {
+                if (prev.rank === rank) { toast(`Already rank ${rank}`); clearPending(); return; }
+                }
+                const selector = selectorFor(el);
+                selectedByEl.set(el, { rank, selector, tag: el.tagName.toLowerCase() });
+                markRanked(el);
+                clearPending();
+                toast(`Assigned rank ${rank} to <${el.tagName.toLowerCase()}>`);
+            };
+
+            const onKeyDown = (e) => {
+                if (e.key === "Escape") { e.preventDefault(); end(); return; }
+                const num = Number(e.key);
+                if (pendingEl && Number.isInteger(num) && num>=1 && num<=5) {
+                e.preventDefault(); assignRank(pendingEl, num);
+                }
+            };
+
+            const onPointerDown = (e) => {
+                const inHUD = e.target.closest(`.${INTERNAL_PREFIX}hud`);
+                if (!(e.altKey && e.button === 0)) { if (!inHUD) clearPending(); return; }
+                e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
+
+                const el = document.elementFromPoint(e.clientX, e.clientY);
+                if (!el) return;
+
+                if (selectedByEl.has(el)) { clearPending(); removeSelection(el); return; }
+
+                clearPending();
+                pendingEl = el;
+                markPending(el);
+                showHUD(e.clientX, e.clientY, (rank)=>assignRank(el, rank));
+            };
+
+            const buildProfile = () => {
+                const ranks = {};
+                for (const [, rec] of selectedByEl.entries()) {
+                const k = String(rec.rank);
+                (ranks[k] ||= []).push({ selector: rec.selector, tag: rec.tag });
+                }
+                return {
+                version: 1,
+                url: location.href,
+                origin: location.origin,
+                path: location.pathname,
+                saved_at: Date.now(),
+                ranks
+                };
+            };
+
+            // Save to a real file (Drive/OneDrive/Dropbox desktop folders work)
+            const saveToFile = async (profile, filename = "gaze_profile.json") => {
+                const data = JSON.stringify(profile, null, 2);
+                if (window.showSaveFilePicker) {
+                const handle = await window.showSaveFilePicker({
+                    suggestedName: filename,
+                    types: [{ description: "JSON", accept: { "application/json": [".json"] } }]
+                });
+                const w = await handle.createWritable();
+                await w.write(data);
+                await w.close();
+                toast(`Saved ${handle.name}`);
+                return handle;
+                } else {
+                // Fallback: normal download
+                const a = document.createElement("a");
+                a.download = filename;
+                a.href = URL.createObjectURL(new Blob([data], { type: "application/json" }));
+                a.click();
+                URL.revokeObjectURL(a.href);
+                toast("Saved (downloaded)");
+                return null;
+                }
+            };
+
+            const end = async ({ silent = false } = {}) => {
+                removeEventListener("pointerdown", onPointerDown, true);
+                removeEventListener("keydown", onKeyDown, true);
+                clearPending();
+                for (const el of Array.from(selectedByEl.keys())) unmarkRanked(el);
+
+                const profile = buildProfile();
+                if (!silent) {
+                console.log("📁 Setup profile:", profile);
+                console.log("JSON:", JSON.stringify(profile, null, 2));
+                }
+                try { await saveToFile(profile, "gaze_profile.json"); } catch (err) { console.warn("Save cancelled/failed:", err); }
+                window.__gazeSetup = undefined;
+                return profile;
+            };
+
+            addEventListener("pointerdown", onPointerDown, true);
+            addEventListener("keydown", onKeyDown, true);
+
+            window.__gazeSetup = {
+                end, // async; shows Save dialog; returns profile
+                export: () => { const p = buildProfile(); console.log("📤 JSON:", JSON.stringify(p, null, 2)); return p; },
+            };
+
+            console.log("🟦 Setup: Alt+Click to add (blue → 1–5 → green), Alt+Click AGAIN to remove. Press Esc to save as gaze_profile.json.");
+            })();
+
         """
         
         try:
@@ -1576,12 +1433,19 @@ class TestUIManager:
     def start_eye_tracker_calibration(self, calibration_window):
         """Start the eye tracker calibration process."""
         try:
-            # Import and initialize eye tracker
+            # Import EyeTracker
             import sys
             import os
-            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
             
-            from eye_tracking.EyeTracker import EyeTracker
+            # Add src and project root to path
+            current_dir = os.path.dirname(__file__)
+            src_dir = os.path.dirname(current_dir)
+            project_root = os.path.dirname(src_dir)
+            
+            sys.path.insert(0, src_dir)
+            sys.path.insert(0, project_root)
+            
+            from src.eye_tracking.EyeTracker import EyeTracker
             
             # Close calibration dialog
             calibration_window.destroy()
@@ -1589,12 +1453,13 @@ class TestUIManager:
             # Hide main window during calibration
             self.root.withdraw()
             
-            # Initialize and run calibration
-            print("🔧 Initializing EyeTracker for calibration...")
-            tracker = EyeTracker()
+            # Initialize shared eye tracker instance if not already created
+            if self.eye_tracker is None:
+                print("🔧 Initializing EyeTracker for calibration...")
+                self.eye_tracker = EyeTracker()
             
             print("🎯 Starting calibration with 25 points...")
-            calibration_success = tracker.recalibrate(3)  #TODO UPDATE BACK TO 30 Points ON DEPLOY
+            calibration_success = self.eye_tracker.recalibrate(25)
             
             # Show main window again
             self.root.deiconify()
@@ -1630,10 +1495,17 @@ class TestUIManager:
         """Continue with the actual test after calibration is complete."""
         import threading, time
         try:
-            from .integrated_test_runner import IntegratedTestManager
-            from eye_tracking.EyeTracker import EyeTracker
             import sys, os
-            sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+            
+            # Add src and project root to path
+            current_dir = os.path.dirname(__file__)
+            src_dir = os.path.dirname(current_dir)
+            project_root = os.path.dirname(src_dir)
+            
+            sys.path.insert(0, src_dir)
+            sys.path.insert(0, project_root)
+            
+            from src.gui.integrated_test_runner import IntegratedTestManager
 
             # Duration in minutes (float)
             duration_str = self.current_test_data.get('duration', '2')
@@ -1646,48 +1518,31 @@ class TestUIManager:
                 duration = 2.0
             duration_sec = int(duration * 60)
 
-            # Start browser
-            test_manager = IntegratedTestManager(self.current_test_data)
-            browser_started = threading.Event()
-
-            def on_browser_ready():
-                print("🌐 Browser is ready. Starting eye tracking...")
-                browser_started.set()
-
+            # Use the calibrated eye tracker instance
+            if self.eye_tracker is None:
+                print("⚠️ No eye tracker calibrated - test will run without gaze tracking")
+                tracker = None
+            else:
+                print("✅ Using calibrated eye tracker for gaze data collection")
+                tracker = self.eye_tracker
+            
+            # Start browser with eye tracker integration
+            test_manager = IntegratedTestManager(self.current_test_data, eye_tracker=tracker)
+            
             def on_test_complete():
                 print("✅ Test completed - returning to post-test screen")
+                # Stop eye tracker gaze tracking but keep calibration
+                if tracker and hasattr(tracker, 'tracking_active'):
+                    tracker.tracking_active = False
+                # Note: We keep the eye tracker instance for potential future tests
                 self.root.deiconify()
                 self.show_post_test_screen()
 
-            # Start browser in background
+            # Start browser with integrated eye tracking
             def browser_thread():
                 test_manager.start_test_with_browser(completion_callback=on_test_complete)
 
             threading.Thread(target=browser_thread, daemon=True).start()
-
-            # Wait for browser to be ready (or just a short delay)
-            time.sleep(3)
-
-            # Start eye tracker in background
-
-            def eye_tracker_thread():
-                tracker = EyeTracker()
-                tracker.is_calibrated = True  # Already calibrated
-                print("👁️ Eye tracking started. Using track() method...")
-                try:
-                    tracker.track(duration_sec, debug=True) # TODO UPDATE ON DEPLOY
-                except Exception as e:
-                    print(f"Eye tracking error: {e}")
-                print("👁️ Eye tracking finished.")
-                # Release camera
-                if hasattr(tracker, 'cap') and tracker.cap:
-                    try:
-                        tracker.cap.release()
-                    except Exception:
-                        pass
-
-            eye_thread = threading.Thread(target=eye_tracker_thread, daemon=True)
-            eye_thread.start()
 
             # Hide the current window while test runs
             self.root.withdraw()

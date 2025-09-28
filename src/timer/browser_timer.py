@@ -26,11 +26,13 @@ class BrowserTimer:
         self.webview_window = None
         self.report_manager = ReportManager()
         self.overlay_injector = OverlayInjector()
+        self.time_elapsed_callback = None
     
-    def start_timer(self, time_limit_minutes, webview_window=None):
+    def start_timer(self, time_limit_minutes, webview_window=None, on_time_elapsed=None):
         """Start a timer to close the browser after the specified time limit."""
         self.timer_active = True
         self.webview_window = webview_window
+        self.time_elapsed_callback = on_time_elapsed
         
         def timer_function():
             time_limit_seconds = int(time_limit_minutes * 60)
@@ -73,7 +75,13 @@ class BrowserTimer:
             
             if self.timer_active:
                 print("⏰ Time limit reached!")
-                
+
+                if self.time_elapsed_callback:
+                    try:
+                        self.time_elapsed_callback()
+                    except Exception as callback_error:
+                        print(f"⚠️ Time-elapsed callback failed: {callback_error}")
+
                 # Set webview window for overlay injection
                 self.overlay_injector.set_webview_window(self.webview_window)
                 
@@ -85,6 +93,7 @@ class BrowserTimer:
                 
                 print("   Browser will remain open - close it manually when finished")
                 self.timer_active = False
+                self.time_elapsed_callback = None
         
         self.timer_thread = threading.Thread(target=timer_function, daemon=True)
         self.timer_thread.start()
@@ -98,6 +107,7 @@ class BrowserTimer:
         """Stop the active timer."""
         if self.timer_active:
             self.timer_active = False
+            self.time_elapsed_callback = None
             print("Timer manually stopped.")
     
     def is_active(self):

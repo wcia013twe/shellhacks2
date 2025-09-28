@@ -205,8 +205,8 @@ class EyeTracker:
         
         # Calibration state
         iterator = 0
-        prev_x, prev_y = 0, 0
-        calibration_start_time = 0
+        prev_point = None
+        calibration_start_time = 0.0
         calibration_point_displayed = False
         
         clock = pygame.time.Clock()
@@ -240,59 +240,64 @@ class EyeTracker:
                 event_result, calibration = self.gestures.step(
                     frame, True, self.screen_width, self.screen_height, context="tracker"
                 )
-                
+
                 if event_result is None or calibration is None:
                     continue
-                    
+
+                calibration_point = getattr(calibration, "point", None)
+                if calibration_point is None:
+                    continue
+
+                gaze_point = getattr(event_result, "point", None)
+                sub_frame = getattr(event_result, "sub_frame", None)
+
             except Exception as e:
-                print(f"⚠️  Eye tracking step error: {e}")
+                print(f"[warn] Eye tracking step error: {e}")
                 continue
-            
-            # Clear screen
+
+            try:
+                cal_point_tuple = (int(calibration_point[0]), int(calibration_point[1]))
+            except (TypeError, ValueError, IndexError):
+                continue
+
+            gaze_tuple = None
+            if gaze_point is not None:
+                try:
+                    gaze_tuple = (int(gaze_point[0]), int(gaze_point[1]))
+                except (TypeError, ValueError, IndexError):
+                    gaze_tuple = None
+
             screen.fill((0, 0, 0))
-            
-            # Display camera feed (small preview)
-            screen.blit(
-                pygame.surfarray.make_surface(np.rot90(event_result.sub_frame)),
-                (0, 0)
-            )
-            
-            # Calibration timing logic
+
+            if isinstance(sub_frame, np.ndarray) and getattr(sub_frame, "size", 0):
+                screen.blit(
+                    pygame.surfarray.make_surface(np.rot90(sub_frame)),
+                    (0, 0)
+                )
+
             current_time = pygame.time.get_ticks() / 1000.0
-            
-            # Check for new calibration point
-            if calibration.point[0] != prev_x or calibration.point[1] != prev_y:
+
+            if prev_point is None or cal_point_tuple != prev_point:
                 if not calibration_point_displayed:
                     calibration_start_time = current_time
                     calibration_point_displayed = True
-                    prev_x, prev_y = calibration.point[0], calibration.point[1]
-                    print(f"📍 Point {iterator + 1}/{self.n_points} - Look at the blue circle")
-            
-            # Check if time elapsed for this point
+                    prev_point = cal_point_tuple
+                    print(f"Point {iterator + 1}/{self.n_points} - focus on the blue circle")
+
             if calibration_point_displayed and (current_time - calibration_start_time >= self.CALIBRATION_DURATION):
                 iterator += 1
                 calibration_point_displayed = False
-                print(f"✓ Point {iterator}/{self.n_points} completed")
-            
-            # Draw yellow circle showing where eyes are currently looking
-            if event_result.point is not None:
-                pygame.draw.circle(screen, self.YELLOW, event_result.point, 15)
-                # Add small outline for visibility
-                pygame.draw.circle(screen, self.WHITE, event_result.point, 15, 2)
-            
-            # Draw calibration target (blue circle)
-            pygame.draw.circle(screen, self.BLUE, calibration.point, 40)
-            
-            # Show progress
-            progress_text = bold_font.render(f"{iterator}/{self.n_points}", True, self.WHITE)
-            progress_rect = progress_text.get_rect(center=calibration.point)
+                print(f"Point {iterator}/{self.n_points} completed")
+
+            if gaze_tuple is not None:
+                pygame.draw.circle(screen, self.YELLOW, gaze_tuple, 15)
+                pygame.draw.circle(screen, self.WHITE, gaze_tuple, 15, 2)
+
+            pygame.draw.circle(screen, self.BLUE, cal_point_tuple, 40)
+
+            progress_text = bold_font.render("{}/{}".format(iterator, self.n_points), True, self.WHITE)
+            progress_rect = progress_text.get_rect(center=cal_point_tuple)
             screen.blit(progress_text, progress_rect)
-            
- 
-            # Show gaze tracking info
-            gaze_x, gaze_y = event_result.point
-           
-            
             # Show instructions
             instruction_font = pygame.font.SysFont('Arial', 20)
             instructions = [
@@ -483,7 +488,7 @@ if __name__ == "__main__":
     tracker = EyeTracker()
     
     # Calibrate
-    if tracker.recalibrate(25):
+    if tracker.recalibrate(9):
         # Start tracking
         tracker.track(debug=True)
     

@@ -1,0 +1,262 @@
+diff --git a/electron-app/src/main/index.js b/electron-app/src/main/index.js
+--- a/electron-app/src/main/index.js
++++ b/electron-app/src/main/index.js
+@@
+-import { mkdir, writeFile } from 'fs/promises'
++import { mkdir, writeFile, readdir, readFile } from 'fs/promises'
+@@
+-import { join, dirname } from 'path'
++import { join, dirname, isAbsolute, resolve as resolvePath, sep } from 'path'
+@@
+ const saveProfileToDisk = async (profile) => {
+   const dir = await ensureProfileDir()
+   const fileName = buildProfileFilename(profile)
+   const filePath = join(dir, fileName)
+   await writeFile(filePath, JSON.stringify(profile, null, 2), 'utf-8')
+   return filePath
+ }
+ 
++const resolveProfilePath = async (inputPath) => {
++  if (!inputPath) {
++    throw new Error('No profile path provided.')
++  }
++  const dir = await ensureProfileDir()
++  const base = resolvePath(dir)
++  const candidate = isAbsolute(inputPath) ? inputPath : join(dir, inputPath)
++  const normalized = resolvePath(candidate)
++  if (normalized !== base && !normalized.startsWith(`${base}${sep}`)) {
++    throw new Error('Invalid profile path.')
++  }
++  return normalized
++}
++
++const readProfileFile = async (filePath) => {
++  const resolvedPath = await resolveProfilePath(filePath)
++  const raw = await readFile(resolvedPath, 'utf-8')
++  return { profile: JSON.parse(raw), path: resolvedPath }
++}
++
++const listProfiles = async () => {
++  const dir = await ensureProfileDir()
++  const entries = await readdir(dir, { withFileTypes: true })
++  const profiles = []
++  for (const entry of entries) {
++    if (!entry.isFile() || !entry.name.endsWith('.json')) {
++      continue
++    }
++    const absPath = resolvePath(join(dir, entry.name))
++    try {
++      const raw = await readFile(absPath, 'utf-8')
++      const profile = JSON.parse(raw)
++      const url = profile?.url || (profile?.origin ? `${profile.origin}${profile.path || ''}` : '')
++      profiles.push({
++        id: entry.name,
++        name: profile?.name || entry.name.replace(/\.json$/i, ''),
++        url,
++        origin: profile?.origin || null,
++        path: profile?.path || null,
++        savedAt: profile?.saved_at || null,
++        profilePath: absPath
++      })
++    } catch (error) {
++      console.warn('[gaze] Skipping invalid profile file:', entry.name, error)
++    }
++  }
++  profiles.sort((a, b) => {
++    const timeDiff = (b.savedAt || 0) - (a.savedAt || 0)
++    if (timeDiff !== 0) {
++      return timeDiff
++    }
++    return (a.name || '').localeCompare(b.name || '')
++  })
++  return profiles
++}
++
+ const getResourcesRoot = () => {
+@@
+-const openSessionWindow = ({ url, mode, durationSeconds }) => {
++const openSessionWindow = ({ url, mode, durationSeconds, profile }) => {
+@@
+-  sessionRegistry.set(sessionId, { window: sessionWindow, mode })
++  sessionRegistry.set(sessionId, { window: sessionWindow, mode, profile })
+@@
+-  const run = async () => {
+-    const script = loadScript(mode)
+-    if (!script) {
+-      throw new Error(`Script "${mode}" not found.`)
+-    }
+-
+-    try {
+-      await contents.executeJavaScript(script.code, true)
+-    } catch (error) {
+-      if (sessionWindow.isDestroyed() || contents.isDestroyed()) {
+-        return
+-      }
+-      throw error
+-    }
+-
+-    broadcast('gaze:session-event', {
+-      sessionId,
+-      type: 'script-ready',
+-      mode
+-    })
+-
+-    if (mode !== 'play') {
+-      return
+-    }
++  const run = async () => {
++    const script = loadScript(mode)
++    if (!script) {
++      throw new Error(`Script "${mode}" not found.`)
++    }
++
++    if (mode === 'play') {
++      if (!profile) {
++        throw new Error('No saved profile was provided for play mode.')
++      }
++      let profileOrigin = profile.origin
++      let profilePathSegment = typeof profile.path === 'string' ? profile.path : ''
++      if ((!profileOrigin || typeof profileOrigin !== 'string') && profile.url) {
++        try {
++          const parsedUrl = new URL(profile.url)
++          profileOrigin = parsedUrl.origin
++          profilePathSegment = parsedUrl.pathname
++        } catch (error) {
++          console.warn('[gaze] Unable to derive profile origin from URL:', error)
++        }
++      }
++      if (!profileOrigin) {
++        throw new Error('Saved profile is missing origin information.')
++      }
++      if (!profilePathSegment) {
++        profilePathSegment = '/'
++      }
++      const profileKey = `__gaze_profile__${profileOrigin}${profilePathSegment}`
++      const serializedProfile = JSON.stringify(profile)
++      const seedScript = `(() => {
++        try {
++          localStorage.setItem(${JSON.stringify(profileKey)}, ${JSON.stringify(serializedProfile)})
++        } catch (error) {
++          console.error('[gaze] Failed to seed gaze profile into localStorage:', error)
++          throw error
++        }
++      })();`
++      try {
++        await contents.executeJavaScript(seedScript, true)
++      } catch (error) {
++        if (sessionWindow.isDestroyed() || contents.isDestroyed()) {
++          return
++        }
++        throw error
++      }
++    }
++
++    try {
++      await contents.executeJavaScript(script.code, true)
++    } catch (error) {
++      if (sessionWindow.isDestroyed() || contents.isDestroyed()) {
++        return
++      }
++      throw error
++    }
++
++    broadcast('gaze:session-event', {
++      sessionId,
++      type: 'script-ready',
++      mode
++    })
++
++    if (mode !== 'play') {
++      return
++    }
+@@
+-    let result = null
+-    try {
+-      result = await contents.executeJavaScript(
+-        `(() => {
+-          if (!window.__gazePlay?.runFor) {
+-            throw new Error('Play runtime did not initialise.');
+-          }
+-          return window.__gazePlay.runFor(${durationMs}, false);
+-        })();`,
+-        true
+-      )
+-    } catch (error) {
+-      if (sessionWindow.isDestroyed() || contents.isDestroyed()) {
+-        return
+-      }
+-      throw error
+-    }
++    let result = null
++    try {
++      result = await contents.executeJavaScript(
++        `(() => {
++          if (!window.__gazePlay?.runFor) {
++            throw new Error('Play runtime did not initialise.');
++          }
++          return window.__gazePlay.runFor(${durationMs}, false);
++        })();`,
++        true
++      )
++    } catch (error) {
++      if (sessionWindow.isDestroyed() || contents.isDestroyed()) {
++        return
++      }
++      throw error
++    }
+@@
+-  ipcMain.handle('gaze:copyScript', (_, id) => {
+-    const payload = loadScript(id)
+-    if (!payload) {
+-      throw new Error(`Script "${id}" not found.`)
+-    }
+-    clipboard.writeText(payload.code)
+-    return { success: true }
+-  })
+-
+-  ipcMain.handle('gaze:runScript', (_, options = {}) => {
+-    const mode = options.mode === 'play' ? 'play' : 'setup'
+-    const url = normaliseUrl(options.url || '')
+-    if (mode === 'play' && (!options.durationSeconds || Number(options.durationSeconds) <= 0)) {
+-      throw new Error('Please provide a positive duration for play sessions.')
+-    }
+-    return openSessionWindow({ url, mode, durationSeconds: options.durationSeconds })
+-  })
++  ipcMain.handle('gaze:copyScript', (_, id) => {
++    const payload = loadScript(id)
++    if (!payload) {
++      throw new Error(`Script "${id}" not found.`)
++    }
++    clipboard.writeText(payload.code)
++    return { success: true }
++  })
++
++  ipcMain.handle('gaze:listProfiles', async () => listProfiles())
++
++  ipcMain.handle('gaze:runScript', async (_, options = {}) => {
++    const mode = options.mode === 'play' ? 'play' : 'setup'
++    const durationSeconds = options.durationSeconds
++    let url = ''
++    let profile = null
++
++    if (mode === 'play') {
++      if (!options.profilePath) {
++        throw new Error('Please select a saved session to play.')
++      }
++      const { profile: loadedProfile } = await readProfileFile(options.profilePath)
++      profile = loadedProfile
++      const candidateUrl = profile?.url || (profile?.origin ? `${profile.origin}${profile.path || ''}` : '')
++      if (!candidateUrl) {
++        throw new Error('The selected profile does not contain a URL to open.')
++      }
++      url = normaliseUrl(candidateUrl)
++      const duration = Number(durationSeconds)
++      if (!duration || duration <= 0) {
++        throw new Error('Please provide a positive duration for play sessions.')
++      }
++    } else {
++      url = normaliseUrl(options.url || '')
++    }
++
++    return openSessionWindow({ url, mode, durationSeconds, profile })
++  })
