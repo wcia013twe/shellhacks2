@@ -1635,6 +1635,7 @@ class TestUIManager:
             import sys, os
             sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
+
             # Duration in minutes (float)
             duration_str = self.current_test_data.get('duration', '2')
             try:
@@ -1645,6 +1646,11 @@ class TestUIManager:
             except:
                 duration = 2.0
             duration_sec = int(duration * 60)
+
+            # Get URL from config
+            url = self.current_test_data.get('url', 'https://google.com')
+            print(f"[DEBUG] Launching browser with URL: {url} for {duration} minutes ({duration_sec} seconds)")
+
 
             # Start browser
             test_manager = IntegratedTestManager(self.current_test_data)
@@ -1670,12 +1676,13 @@ class TestUIManager:
 
             # Start eye tracker in background
 
+
             def eye_tracker_thread():
                 tracker = EyeTracker()
                 tracker.is_calibrated = True  # Already calibrated
                 print("👁️ Eye tracking started. Using track() method...")
                 try:
-                    tracker.track(duration_sec, debug=True) # TODO UPDATE ON DEPLOY
+                    tracker.track(duration_sec, debug=True)
                 except Exception as e:
                     print(f"Eye tracking error: {e}")
                 print("👁️ Eye tracking finished.")
@@ -1686,7 +1693,8 @@ class TestUIManager:
                     except Exception:
                         pass
 
-            eye_thread = threading.Thread(target=eye_tracker_thread, daemon=True)
+            # Start as non-daemon so debug window persists
+            eye_thread = threading.Thread(target=eye_tracker_thread, daemon=False)
             eye_thread.start()
 
             # Hide the current window while test runs

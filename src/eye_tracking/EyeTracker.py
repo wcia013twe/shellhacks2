@@ -29,6 +29,25 @@ except ImportError as e:
 
 
 class EyeTracker:
+    def kill(self):
+        """Forcefully stop the eye tracker, release camera, and quit pygame."""
+        print("🛑 Killing EyeTracker instance...")
+        # Release camera
+        if hasattr(self, 'cap') and self.cap:
+            try:
+                self.cap.release()
+                print("📷 Camera released.")
+            except Exception as e:
+                print(f"⚠️ Error releasing camera: {e}")
+        # Quit pygame
+        try:
+            pygame.quit()
+            print("🎮 Pygame quit.")
+        except Exception as e:
+            print(f"⚠️ Error quitting pygame: {e}")
+        # Set killed flag
+        self.killed = True
+        print("✅ EyeTracker killed.")
     """
     Unified EyeTracker class that handles calibration and tracking
     
@@ -313,7 +332,7 @@ class EyeTracker:
         return iterator >= self.n_points
     
     
-    def track(self, print_interval=5, debug=False):
+    def track(self, print_interval=20, debug=False):
         """
         Start continuous gaze tracking and print X,Y coordinates
         
@@ -467,6 +486,46 @@ class EyeTracker:
             print(f"❌ Error getting gaze: {e}")
         
         return None
+    
+    
+    def get_current_gaze_position(self):
+        """
+        Get the current gaze position as simple (x, y) coordinates
+        
+        Returns:
+            tuple: (x, y) coordinates or None if no gaze detected
+        
+        Example:
+            tracker = EyeTracker()
+            if tracker.recalibrate(25):
+                position = tracker.get_current_gaze_position()
+                if position:
+                    x, y = position
+                    print(f"Looking at: ({x}, {y})")
+        """
+        gaze_data = self.get_gaze()
+        if gaze_data and gaze_data['position']:
+            return gaze_data['position']
+        return None
+    
+    
+    def get_current_gaze_info(self):
+        """
+        Get detailed current gaze information
+        
+        Returns:
+            dict: Complete gaze information including position, fixation status, algorithm used
+                 Returns None if no gaze detected
+        
+        Example:
+            tracker = EyeTracker()
+            if tracker.recalibrate(25):
+                info = tracker.get_current_gaze_info()
+                if info:
+                    x, y = info['position']
+                    print(f"Gaze: ({x}, {y}), Fixating: {info['fixation']}, Algorithm: {info['algorithm']}")
+        """
+        return self.get_gaze()
     
     
     def cleanup(self):
