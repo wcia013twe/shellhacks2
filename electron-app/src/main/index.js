@@ -2,6 +2,16 @@ import { app, shell, BrowserWindow, ipcMain } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import icon from '../../resources/icon.png?asset'
+const { spawn } = require('child_process');
+
+let pythonProcess = spawn('python3', ['../backend.py']);
+
+ipcMain.on('ping', (event) => {
+  pythonProcess.stdin.write('ping\n');
+  pythonProcess.stdout.once('data', (data) => {
+    event.reply('pong', data.toString().trim());
+  });
+});
 
 function createWindow() {
   // Create the browser window.
