@@ -1,12 +1,21 @@
-import { contextBridge } from 'electron'
+﻿import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 
-// Custom APIs for renderer
-const api = {}
+const api = {
+  gaze: {
+    listScripts: () => ipcRenderer.invoke('gaze:listScripts'),
+    getScript: (id) => ipcRenderer.invoke('gaze:getScript', id),
+    copyScript: (id) => ipcRenderer.invoke('gaze:copyScript', id),
+    runScript: (options) => ipcRenderer.invoke('gaze:runScript', options),
+    onSessionEvent: (handler) => {
+      if (typeof handler !== 'function') return () => {};
+      const listener = (_event, payload) => handler(payload)
+      ipcRenderer.on('gaze:session-event', listener)
+      return () => ipcRenderer.removeListener('gaze:session-event', listener)
+    }
+  }
+}
 
-// Use `contextBridge` APIs to expose Electron APIs to
-// renderer only if context isolation is enabled, otherwise
-// just add to the DOM global.
 if (process.contextIsolated) {
   try {
     contextBridge.exposeInMainWorld('electron', electronAPI)
